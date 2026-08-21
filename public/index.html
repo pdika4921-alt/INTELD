@@ -794,15 +794,53 @@
       // Bangun extraSources dari API eksternal yang berhasil
       const extraSources = [];
 
-      if (xonData && !xonData.Error) {
-        const breaches = (xonData.breaches || xonData.BreachDetails || []).map(b => ({
-          Name: b.breachID || b.name || b.breach || 'Unknown',
-          BreachDate: b.breachDate || b.date || '-',
-          DataClasses: b.exposedData || (b.xposed_data ? b.xposed_data.split(';') : []),
+      if (xonData && xonData.status === 'success') {
+        // Format response: {"breaches":[["Tokopedia","MyPertamina"]],...}
+        // breaches adalah array of arrays — flatten jadi list nama breach
+        const rawBreaches = xonData.breaches || [];
+        const breachNames = rawBreaches.flat();
+        const breaches = breachNames.map(name => ({
+          Name: name,
+          BreachDate: '-',
+          DataClasses: [],
           IsVerified: true,
-          PwnCount: b.exposedRecords || b.records || 0
+          PwnCount: 0
         }));
         extraSources.push({ source: 'XposedOrNot', status: 'success', breaches });
+      } else if (xonData && (xonData.Error === 'Not found' || xonData.status === 'error')) {
+        extraSources.push({ source: 'XposedOrNot', status: 'success', breaches: [] });
+      }
+
+      // Fetch detail tiap breach dari XposedOrNot (nama saja tidak cukup)
+      const xonSrc = extraSources.find(s => s.source === 'XposedOrNot');
+      if (xonSrc && xonSrc.breaches.length > 0) {
+        try {
+          const metaRes = await fetch('https://api.xposedornot.com/v1/breach-analytics?email=' + encodeURIComponent(query));
+          const ct2 = metaRes.headers.get('content-type') || '';
+          if (ct2.includes('application/json')) {
+            const metaData = await metaRes.json();
+            // BreachMetrics berisi detail tiap breach
+            const metrics = metaData.BreachMetrics || {};
+            const industry = metrics.industry || [];
+            const passwords = metrics.passwords || [];
+            const yearArr = metrics.year || [];
+            // ExposedBreaches.breaches_details berisi array object detail
+            const details = (metaData.ExposedBreaches && metaData.ExposedBreaches.breaches_details) || [];
+            if (details.length > 0) {
+              xonSrc.breaches = details.map(d => ({
+                Name: d.breach || d.breachID || 'Unknown',
+                BreachDate: d.xposed_date || d.breachDate || '-',
+                DataClasses: d.xposed_data ? d.xposed_data.split(';').map(s => s.trim()) : [],
+                IsVerified: true,
+                PwnCount: d.xposed_records || 0,
+                Domain: d.domain || '',
+                Industry: d.industry || ''
+              }));
+            }
+          }
+        } catch(e) {
+          console.warn('XposedOrNot detail fetch gagal:', e.message);
+        }
       }
 
       if (hackData && hackData.data) {
@@ -991,9 +1029,13 @@
         }).join('');
         return `
           <div class="breach-item">
-            <div class="breach-name">🔓 ${b.Name || b.name || 'Unknown'}</div>
-            <div class="breach-date">📅 ${b.BreachDate || b.breach_date || 'Tidak diketahui'}${b.PwnCount ? ' · ' + Number(b.PwnCount).toLocaleString() + ' akun terdampak' : ''}</div>
-            <div class="data-tags">${tags}</div>
+            <div class="breach-name">🔓 ${b.Name || b.name || 'Unknown'}${b.Domain ? ' <span style="font-size:0.7rem;color:var(--muted);font-weight:400;">(${b.Domain})</span>' : ''}</div>
+            <div class="breach-date">
+              📅 ${b.BreachDate || b.breach_date || 'Tidak diketahui'}
+              ${b.PwnCount ? ' · <span style="color:var(--danger)">' + Number(b.PwnCount).toLocaleString() + ' akun</span>' : ''}
+              ${b.Industry ? ' · ' + b.Industry : ''}
+            </div>
+            <div class="data-tags">${tags || '<span style="color:var(--muted);font-size:0.75rem;">Data tidak dirinci</span>'}</div>
           </div>
         `;
       }).join('');
@@ -1113,7 +1155,7 @@
           <span style="font-size:1.5rem;">${d.breaches > 0 ? '⚠️' : '✅'}</span>
           <strong style="font-size:0.95rem; margin-left:8px;">${d.breaches || 0} breach ditemukan</strong>
         </div>
-        ${r.level ? `<div class="info-item" style="margin-bottom:8px;"><div class="key">Risk Score</div><div class="val" style="color:var(--warning)">${r.level} (${r.score}/100)</div></div>` : ''}
+        ${r.level && r.level !== 'unknown' ? `<div class="info-item" style="margin-bottom:8px;"><div class="key">Risk Score</div><div class="val" style="color:var(--warning)">${r.level}${r.score != null ? ' (' + r.score + '/100)' : ''}</div></div>` : ''}
         ${src.passwords?.plain_text > 0 ? `<p style="color:var(--danger);font-size:0.8rem;margin-bottom:8px;">🚨 ${src.passwords.plain_text} password plain text bocor!</p>` : ''}
         ${(src.services || []).length > 0 ? `<p style="font-size:0.78rem;color:var(--muted);">Services: ${src.services.join(', ')}</p>` : ''}
       `;
