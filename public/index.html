@@ -820,7 +820,10 @@
 
       // Jika server backend ada dan sukses, gabungkan
       if (serverData && serverData.success) {
-        serverData.data.sources = [...extraSources, ...(serverData.data.sources || [])];
+        // FIX: De-duplikasi — hapus source dari backend yang namanya sudah ada di extraSources
+        const extraSourceNames = new Set(extraSources.map(s => s.source));
+        const backendSources = (serverData.data.sources || []).filter(s => !extraSourceNames.has(s.source));
+        serverData.data.sources = [...extraSources, ...backendSources];
 
         const xonCount = extraSources.find(s => s.source === 'XposedOrNot')?.breaches?.length || 0;
         const hackCount = hackData?.data?.breaches || 0;
