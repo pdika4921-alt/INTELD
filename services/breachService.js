@@ -281,4 +281,4 @@ async function runIntelligence(query, type) {
   return results;
 }
 
-module.exports = { runIntelligence, normalizePhone };
+module.exports = { runIntelligence, normalizePhone }};
