@@ -1029,7 +1029,7 @@
         }).join('');
         return `
           <div class="breach-item">
-            <div class="breach-name">🔓 ${b.Name || b.name || 'Unknown'}${b.Domain ? ' <span style="font-size:0.7rem;color:var(--muted);font-weight:400;">(${b.Domain})</span>' : ''}</div>
+            <div class="breach-name">🔓 ${b.Name || b.name || 'Unknown'}${b.Domain ? ` <span style="font-size:0.7rem;color:var(--muted);font-weight:400;">(${b.Domain})</span>` : ''}</div>
             <div class="breach-date">
               📅 ${b.BreachDate || b.breach_date || 'Tidak diketahui'}
               ${b.PwnCount ? ' · <span style="color:var(--danger)">' + Number(b.PwnCount).toLocaleString() + ' akun</span>' : ''}
