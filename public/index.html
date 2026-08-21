@@ -31,7 +31,6 @@
       min-height: 100vh;
     }
 
-    /* HEADER */
     header {
       border-bottom: 1px solid var(--border);
       padding: 18px 32px;
@@ -83,7 +82,6 @@
       50% { opacity: 0.4; }
     }
 
-    /* TABS */
     .tabs {
       display: flex;
       gap: 0;
@@ -113,7 +111,6 @@
 
     .tab-btn:hover:not(.active) { color: var(--text); }
 
-    /* MAIN */
     main {
       max-width: 1100px;
       margin: 0 auto;
@@ -123,7 +120,6 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    /* SEARCH BOX */
     .search-hero {
       text-align: center;
       margin-bottom: 40px;
@@ -221,7 +217,6 @@
     .btn-search:hover { opacity: 0.85; }
     .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* LOADING */
     .loading {
       display: none;
       text-align: center;
@@ -242,7 +237,6 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* RESULTS */
     #results { margin-top: 32px; }
 
     .risk-banner {
@@ -267,7 +261,6 @@
     }
 
     .risk-icon { font-size: 2rem; }
-
     .risk-info h2 { font-size: 1.2rem; font-weight: 700; }
     .risk-info p { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
 
@@ -284,7 +277,6 @@
     .risk-tag.MEDIUM { background: rgba(245,158,11,0.2); color: var(--warning); }
     .risk-tag.HIGH, .risk-tag.CRITICAL { background: rgba(255,59,92,0.2); color: var(--danger); }
 
-    /* SOURCE CARDS */
     .sources-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -370,7 +362,6 @@
       font-size: 0.85rem;
     }
 
-    /* HISTORY TABLE */
     .table-wrap { overflow-x: auto; }
 
     table {
@@ -428,7 +419,6 @@
     .risk-pill.MEDIUM { background: rgba(245,158,11,0.15); color: var(--warning); }
     .risk-pill.HIGH, .risk-pill.CRITICAL { background: rgba(255,59,92,0.15); color: var(--danger); }
 
-    /* STATS */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -459,7 +449,6 @@
       letter-spacing: 1px;
     }
 
-    /* DEMO NOTICE */
     .demo-notice {
       background: rgba(245,158,11,0.08);
       border: 1px solid rgba(245,158,11,0.3);
@@ -473,7 +462,6 @@
       align-items: flex-start;
     }
 
-    /* EMAIL DETAIL */
     .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -490,7 +478,6 @@
     .info-item .key { color: var(--muted); font-size: 0.7rem; margin-bottom: 2px; }
     .info-item .val { font-family: var(--mono); }
 
-    /* WATCHLIST */
     .watchlist-form {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -551,6 +538,16 @@
       padding-bottom: 8px;
       border-bottom: 1px solid var(--border);
     }
+
+    .error-box {
+      background: rgba(255,59,92,0.08);
+      border: 1px solid rgba(255,59,92,0.3);
+      border-radius: 10px;
+      padding: 16px 20px;
+      color: var(--danger);
+      font-size: 0.85rem;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
@@ -567,10 +564,10 @@
 </header>
 
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('search', event)">🔎 Pencarian</button>
-  <button class="tab-btn" onclick="switchTab('history', event)">📋 Riwayat</button>
-  <button class="tab-btn" onclick="switchTab('watchlist', event)">👁️ Watchlist</button>
-  <button class="tab-btn" onclick="switchTab('stats', event)">📊 Statistik</button>
+  <button class="tab-btn active" onclick="switchTab('search', this)">🔎 Pencarian</button>
+  <button class="tab-btn" onclick="switchTab('history', this)">📋 Riwayat</button>
+  <button class="tab-btn" onclick="switchTab('watchlist', this)">👁️ Watchlist</button>
+  <button class="tab-btn" onclick="switchTab('stats', this)">📊 Statistik</button>
 </div>
 
 <main>
@@ -707,12 +704,12 @@
   let selectedType = 'email';
 
   // ---- TAB SWITCHING ----
-  function switchTab(name, e) {
+  // FIX: pakai parameter `btn` bukan `event.target` yang tidak reliable di semua browser
+  function switchTab(name, btn) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
-    const btn = (e && e.currentTarget) || (typeof event !== 'undefined' && event && event.target);
-    if (btn) btn.classList.add('active');
+    btn.classList.add('active');
 
     if (name === 'history') loadHistory();
     if (name === 'watchlist') loadWatchlist();
@@ -735,7 +732,7 @@
   }
 
   // ---- SEARCH ----
- async function runSearch() {
+  async function runSearch() {
     const query = document.getElementById('queryInput').value.trim();
     if (!query) return alert('Masukkan data yang ingin dicari');
 
@@ -746,26 +743,147 @@
     document.getElementById('results').innerHTML = '';
 
     try {
-      const serverPromise = fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, type: selectedType })
-      });
+      // FIX: Pisah fetch dan .json() dengan try-catch masing-masing
+      // agar error di satu sumber tidak membatalkan semua
 
-      if (!serverPromise.ok) {
-        const errJson = await serverPromise.json().catch(() => ({}));
-        throw new Error(errJson.error || ('HTTP ' + serverPromise.status));
+      // Server backend (mungkin tidak ada di mode demo)
+      let serverData = null;
+      try {
+        const serverRes = await fetch('/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, type: selectedType })
+        });
+        // Cek content-type sebelum parse JSON
+        const ct = serverRes.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          serverData = await serverRes.json();
+        }
+      } catch (e) {
+        console.warn('Server /api/search tidak tersedia:', e.message);
       }
 
-      const serverData = await serverPromise.json();
+      // XposedOrNot — hanya untuk email
+      let xonData = null;
+      if (selectedType === 'email') {
+        try {
+          const xonRes = await fetch(`https://api.xposedornot.com/v1/check-email/${encodeURIComponent(query)}`);
+          const ct = xonRes.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            xonData = await xonRes.json();
+          }
+        } catch (e) {
+          console.warn('XposedOrNot gagal:', e.message);
+        }
+      }
 
-      if (serverData?.success) {
+      // HackMyIP — hanya untuk email
+      let hackData = null;
+      if (selectedType === 'email') {
+        try {
+          const hackRes = await fetch(`https://hackmyip.com/api/breach?email=${encodeURIComponent(query)}`);
+          const ct = hackRes.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            hackData = await hackRes.json();
+          }
+        } catch (e) {
+          console.warn('HackMyIP gagal:', e.message);
+        }
+      }
+
+      // Bangun extraSources dari API eksternal yang berhasil
+      const extraSources = [];
+
+      if (xonData && !xonData.Error) {
+        const breaches = (xonData.breaches || xonData.BreachDetails || []).map(b => ({
+          Name: b.breachID || b.name || b.breach || 'Unknown',
+          BreachDate: b.breachDate || b.date || '-',
+          DataClasses: b.exposedData || (b.xposed_data ? b.xposed_data.split(';') : []),
+          IsVerified: true,
+          PwnCount: b.exposedRecords || b.records || 0
+        }));
+        extraSources.push({ source: 'XposedOrNot', status: 'success', breaches });
+      }
+
+      if (hackData && hackData.data) {
+        const d = hackData.data;
+        extraSources.push({
+          source: 'HackMyIP',
+          status: 'success',
+          hackData: d,
+          found: d.breaches || 0,
+          services: d.services || [],
+          risk: d.risk || {},
+          passwords: d.passwords || {}
+        });
+      }
+
+      // Jika server backend ada dan sukses, gabungkan
+      if (serverData && serverData.success) {
+        serverData.data.sources = [...extraSources, ...(serverData.data.sources || [])];
+
+        const xonCount = extraSources.find(s => s.source === 'XposedOrNot')?.breaches?.length || 0;
+        const hackCount = hackData?.data?.breaches || 0;
+        serverData.data.summary.total_breaches = Math.max(
+          serverData.data.summary.total_breaches || 0,
+          xonCount,
+          hackCount
+        );
+
+        const total = serverData.data.summary.total_breaches;
+        if (total >= 10) serverData.data.summary.risk_level = 'CRITICAL';
+        else if (total >= 5) serverData.data.summary.risk_level = 'HIGH';
+        else if (total >= 2) serverData.data.summary.risk_level = 'MEDIUM';
+        else if (total >= 1) serverData.data.summary.risk_level = 'LOW';
+        else serverData.data.summary.risk_level = 'SAFE';
+
         renderResults(serverData.data);
+
+      } else if (extraSources.length > 0) {
+        // FIX: Jika tidak ada backend tapi ada data dari API eksternal, tetap tampilkan
+        const xonBreaches = extraSources.find(s => s.source === 'XposedOrNot')?.breaches || [];
+        const hackBreachCount = hackData?.data?.breaches || 0;
+        const totalBreaches = Math.max(xonBreaches.length, hackBreachCount);
+
+        let riskLevel = 'SAFE';
+        if (totalBreaches >= 10) riskLevel = 'CRITICAL';
+        else if (totalBreaches >= 5) riskLevel = 'HIGH';
+        else if (totalBreaches >= 2) riskLevel = 'MEDIUM';
+        else if (totalBreaches >= 1) riskLevel = 'LOW';
+
+        const allDataClasses = [...new Set(xonBreaches.flatMap(b => b.DataClasses || []))];
+
+        renderResults({
+          query,
+          summary: {
+            risk_level: riskLevel,
+            total_breaches: totalBreaches,
+            data_classes: allDataClasses
+          },
+          sources: extraSources
+        });
+
       } else {
-        alert('Error: ' + (serverData?.error || 'Koneksi gagal'));
+        // Tidak ada backend dan tidak ada data eksternal — tampilkan pesan
+        document.getElementById('results').innerHTML = `
+          <div class="error-box">
+            <strong>⚠️ Tidak ada data yang berhasil dimuat.</strong><br><br>
+            Kemungkinan penyebab:<br>
+            • Backend <code>/api/search</code> tidak berjalan (mode demo)<br>
+            • API eksternal diblokir CORS di browser<br>
+            • Koneksi internet bermasalah<br><br>
+            Pastikan backend server sudah dijalankan, atau jalankan melalui proxy untuk akses API eksternal.
+          </div>
+        `;
       }
+
     } catch (err) {
-      alert('Koneksi error: ' + err.message);
+      document.getElementById('results').innerHTML = `
+        <div class="error-box">
+          <strong>Error tidak terduga:</strong> ${err.message}
+        </div>
+      `;
+      console.error('runSearch error:', err);
     } finally {
       document.getElementById('loading').classList.remove('show');
       btn.disabled = false;
@@ -774,16 +892,13 @@
   }
 
   // Enter key
-  document.getElementById('queryInput').addEventListener('keydown', e => {
+  document.getElementById('queryInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') runSearch();
   });
 
   // ---- RENDER RESULTS ----
   function renderResults(data) {
     const { summary, sources } = data;
-    const riskColors = {
-      SAFE: '#10b981', LOW: '#34d399', MEDIUM: '#f59e0b', HIGH: '#ff3b5c', CRITICAL: '#ff3b5c'
-    };
     const riskIcons = {
       SAFE: '✅', LOW: '🟡', MEDIUM: '⚠️', HIGH: '🔴', CRITICAL: '🚨'
     };
@@ -806,7 +921,6 @@
       </div>
     `;
 
-    // Phone normalized banner
     if (data.phone_normalized) {
       const n = data.phone_normalized;
       html += `
@@ -831,40 +945,41 @@
       </div>`;
     }
 
-    const hasLive = (sources || []).some(s => s && s.status === 'success');
-    if (!hasLive) {
-      html = `<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35);color:#f59e0b;border-radius:10px;padding:10px 14px;margin-bottom:18px;font-size:0.8rem;">⚠️ Mode DEMO: sumber berbayar nonaktif (tanpa API key). <b>XposedOrNot</b> &amp; <b>HackMyIP</b> tetap mengambil <b>data nyata</b> tanpa key. Tambahkan API key di <code>.env</code> untuk sumber lain (HIBP, EmailRep, Hunter, Shodan, dll).</div>` + html;
+    if (!sources || sources.length === 0) {
+      html += '<div class="empty-result">Tidak ada sumber data yang merespons.</div>';
+    } else {
+      html += '<div class="sources-grid">';
+      sources.forEach(src => {
+        if (!src || !src.source) return;
+        const statusClass = src.status === 'success' ? 'status-ok' : src.status === 'demo' ? 'status-demo' : 'status-err';
+        const statusText = src.status === 'success' ? 'LIVE' : src.status === 'demo' ? 'DEMO' : 'ERROR';
+
+        html += `
+          <div class="source-card">
+            <div class="source-header">
+              <span class="source-name">${src.source}</span>
+              <span class="source-status ${statusClass}">${statusText}</span>
+            </div>
+            <div class="source-body">
+              ${renderSourceBody(src)}
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
     }
 
-    html += '<div class="sources-grid">';
-
-    sources.forEach(src => {
-      if (!src || !src.source) return;
-
-      const statusClass = src.status === 'success' ? 'status-ok' : src.status === 'demo' ? 'status-demo' : 'status-err';
-      const statusText = src.status === 'success' ? 'LIVE' : src.status === 'demo' ? 'DEMO' : 'ERROR';
-
-      html += `
-        <div class="source-card">
-          <div class="source-header">
-            <span class="source-name">${src.source}</span>
-            <span class="source-status ${statusClass}">${statusText}</span>
-          </div>
-          <div class="source-body">
-            ${renderSourceBody(src)}
-          </div>
-        </div>
-      `;
-    });
-
-    html += '</div>';
     document.getElementById('results').innerHTML = html;
   }
 
+  // ---- RENDER SOURCE BODY ----
+  // FIX: Fungsi ini sekarang benar-benar terpisah dari runSearch
   function renderSourceBody(src) {
-    // HIBP Breaches
-    if (src.breaches !== undefined) {
-      if (src.breaches.length === 0) return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
+    // HIBP / XposedOrNot — punya array breaches
+    if (Array.isArray(src.breaches)) {
+      if (src.breaches.length === 0) {
+        return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
+      }
       return src.breaches.map(b => {
         const sensitiveTypes = ['Passwords', 'Credit cards', 'Bank'];
         const tags = (b.DataClasses || []).map(d => {
@@ -873,19 +988,21 @@
         }).join('');
         return `
           <div class="breach-item">
-            <div class="breach-name">🔓 ${b.Name || b.name}</div>
-            <div class="breach-date">📅 ${b.BreachDate || b.breach_date || 'Tidak diketahui'} ${b.PwnCount ? '· ' + b.PwnCount.toLocaleString() + ' akun terdampak' : ''}</div>
+            <div class="breach-name">🔓 ${b.Name || b.name || 'Unknown'}</div>
+            <div class="breach-date">📅 ${b.BreachDate || b.breach_date || 'Tidak diketahui'}${b.PwnCount ? ' · ' + Number(b.PwnCount).toLocaleString() + ' akun terdampak' : ''}</div>
             <div class="data-tags">${tags}</div>
           </div>
         `;
       }).join('');
     }
 
-    // LeakCheck
-    if (src.results !== undefined) {
-      if (!src.results || src.results.length === 0) return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
+    // LeakCheck — punya array results
+    if (Array.isArray(src.results)) {
+      if (src.results.length === 0) {
+        return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
+      }
       return `
-        <p style="color: var(--warning); font-size: 0.8rem; margin-bottom: 10px;">⚠️ ${src.found} baris data bocor ditemukan</p>
+        <p style="color: var(--warning); font-size: 0.8rem; margin-bottom: 10px;">⚠️ ${src.found || src.results.length} baris data bocor ditemukan</p>
         ${src.results.slice(0, 3).map(r => `
           <div class="breach-item">
             <div class="breach-name">📂 ${r.source?.name || 'Unknown'}</div>
@@ -896,26 +1013,13 @@
       `;
     }
 
-    // HackMyIP
-    if (src.source === 'HackMyIP') {
-      const found = src.found || 0;
-      const services = src.services || [];
-      const passwords = src.passwords || {};
-      if (found === 0 && services.length === 0) return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
-      return `
-        <p style="color: var(--warning); font-size: 0.8rem; margin-bottom: 10px;">⚠️ ${found} layanan/breach ditemukan</p>
-        <div class="data-tags">${services.slice(0, 10).map(s => `<span class="data-tag">${s}</span>`).join('')}</div>
-        ${passwords && Object.keys(passwords).length ? `<p style="font-size:0.75rem; color: var(--muted); margin-top:10px;">🔑 Password terdeteksi di: ${Object.keys(passwords).join(', ')}</p>` : ''}
-      `;
-    }
-
-    // EmailRep
+    // EmailRep — punya data.reputation
     if (src.data && src.data.reputation !== undefined) {
       const d = src.data;
       const det = d.details || {};
       return `
         <div class="info-grid">
-          <div class="info-item"><div class="key">Reputasi</div><div class="val">${d.reputation?.toUpperCase()}</div></div>
+          <div class="info-item"><div class="key">Reputasi</div><div class="val">${(d.reputation || '').toUpperCase()}</div></div>
           <div class="info-item"><div class="key">Referensi</div><div class="val">${d.references || 0} sumber</div></div>
           <div class="info-item"><div class="key">Breach</div><div class="val">${det.credentials_leaked ? '⚠️ Ya' : '✅ Tidak'}</div></div>
           <div class="info-item"><div class="key">Mencurigakan</div><div class="val">${d.suspicious ? '⚠️ Ya' : '✅ Tidak'}</div></div>
@@ -926,7 +1030,7 @@
       `;
     }
 
-    // Hunter
+    // Hunter — punya data.emails_found
     if (src.data && src.data.emails_found !== undefined) {
       const d = src.data;
       return `
@@ -944,25 +1048,24 @@
       `;
     }
 
-    // Shodan
+    // Shodan — punya data.subdomains
     if (src.data && src.data.subdomains !== undefined) {
       const d = src.data;
       return `
-        <p style="font-size: 0.8rem; margin-bottom: 8px; color: var(--muted);">Port Terbuka: <span style="color: var(--danger); font-family: var(--mono);">${(d.open_ports || []).join(', ')}</span></p>
-        <p style="font-size: 0.8rem; margin-bottom: 8px; color: var(--muted);">Subdomain: <span style="color: var(--text);">${(d.subdomains || []).join(', ')}</span></p>
+        <p style="font-size: 0.8rem; margin-bottom: 8px; color: var(--muted);">Port Terbuka: <span style="color: var(--danger); font-family: var(--mono);">${(d.open_ports || []).join(', ') || '-'}</span></p>
+        <p style="font-size: 0.8rem; margin-bottom: 8px; color: var(--muted);">Subdomain: <span style="color: var(--text);">${(d.subdomains || []).join(', ') || '-'}</span></p>
         ${d.vulnerabilities?.length ? `<p style="font-size: 0.8rem; color: var(--danger);">⚠️ CVE: ${d.vulnerabilities.join(', ')}</p>` : ''}
       `;
     }
 
-    // NumVerify - phone validation
+    // NumVerify — phone validation
     if (src.source === 'NumVerify' && src.data) {
       const d = src.data;
-      const valid = d.valid;
       return `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom: 12px;">
-          <span style="font-size: 1.8rem;">${valid ? '✅' : '❌'}</span>
+          <span style="font-size: 1.8rem;">${d.valid ? '✅' : '❌'}</span>
           <div>
-            <div style="font-weight:600; font-size: 0.95rem;">${valid ? 'Nomor Valid' : 'Nomor Tidak Valid'}</div>
+            <div style="font-weight:600; font-size: 0.95rem;">${d.valid ? 'Nomor Valid' : 'Nomor Tidak Valid'}</div>
             <div style="font-size:0.75rem; color: var(--muted);">${d.international_format || d.number || '-'}</div>
           </div>
         </div>
@@ -998,58 +1101,88 @@
       `;
     }
 
-    return '<div class="empty-result" style="font-size:0.8rem;">Data tidak tersedia</div>';
-  }
-
-  // ---- HISTORY ----
-  async function loadHistory() {
-    const res = await fetch('/api/history');
-    const data = await res.json();
-    const tbody = document.getElementById('historyTableBody');
-
-    if (!data.data?.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 24px;">Belum ada riwayat pencarian</td></tr>';
-      return;
+    // HackMyIP
+    if (src.hackData) {
+      const d = src.hackData;
+      const r = src.risk || {};
+      return `
+        <div style="margin-bottom:12px;">
+          <span style="font-size:1.5rem;">${d.breaches > 0 ? '⚠️' : '✅'}</span>
+          <strong style="font-size:0.95rem; margin-left:8px;">${d.breaches || 0} breach ditemukan</strong>
+        </div>
+        ${r.level ? `<div class="info-item" style="margin-bottom:8px;"><div class="key">Risk Score</div><div class="val" style="color:var(--warning)">${r.level} (${r.score}/100)</div></div>` : ''}
+        ${src.passwords?.plain_text > 0 ? `<p style="color:var(--danger);font-size:0.8rem;margin-bottom:8px;">🚨 ${src.passwords.plain_text} password plain text bocor!</p>` : ''}
+        ${(src.services || []).length > 0 ? `<p style="font-size:0.78rem;color:var(--muted);">Services: ${src.services.join(', ')}</p>` : ''}
+      `;
     }
 
-    tbody.innerHTML = data.data.map(r => `
-      <tr>
-        <td style="font-family: var(--mono); color: var(--muted); font-size: 0.75rem;">#${r.id}</td>
-        <td style="font-family: var(--mono); font-size: 0.85rem;">${r.query}</td>
-        <td><span class="badge ${r.query_type}">${r.query_type}</span></td>
-        <td style="font-family: var(--mono); color: ${r.breach_count > 0 ? 'var(--danger)' : 'var(--success)'};">${r.breach_count}</td>
-        <td><span class="risk-pill ${r.risk_level}">${r.risk_level}</span></td>
-        <td style="font-size: 0.78rem; color: var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
-        <td><button class="btn-del" onclick="deleteHistory(${r.id}, this)">Hapus</button></td>
-      </tr>
-    `).join('');
+    return '<div class="empty-result" style="font-size:0.8rem;">Data tidak tersedia</div>';
+  }
+  // ---- HISTORY ----
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/history');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const tbody = document.getElementById('historyTableBody');
+
+      if (!data.data?.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 24px;">Belum ada riwayat pencarian</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.data.map(r => `
+        <tr>
+          <td style="font-family: var(--mono); color: var(--muted); font-size: 0.75rem;">#${r.id}</td>
+          <td style="font-family: var(--mono); font-size: 0.85rem;">${r.query}</td>
+          <td><span class="badge ${r.query_type}">${r.query_type}</span></td>
+          <td style="font-family: var(--mono); color: ${r.breach_count > 0 ? 'var(--danger)' : 'var(--success)'};">${r.breach_count}</td>
+          <td><span class="risk-pill ${r.risk_level}">${r.risk_level}</span></td>
+          <td style="font-size: 0.78rem; color: var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
+          <td><button class="btn-del" onclick="deleteHistory(${r.id}, this)">Hapus</button></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      document.getElementById('historyTableBody').innerHTML =
+        `<tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 24px;">Backend tidak tersedia (mode demo)</td></tr>`;
+    }
   }
 
   async function deleteHistory(id, btn) {
-    await fetch('/api/history/' + id, { method: 'DELETE' });
-    btn.closest('tr').remove();
+    try {
+      await fetch('/api/history/' + id, { method: 'DELETE' });
+      btn.closest('tr').remove();
+    } catch (e) {
+      alert('Gagal menghapus: ' + e.message);
+    }
   }
 
   // ---- WATCHLIST ----
   async function loadWatchlist() {
-    const res = await fetch('/api/watchlist');
-    const data = await res.json();
-    const tbody = document.getElementById('watchlistTableBody');
+    try {
+      const res = await fetch('/api/watchlist');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const tbody = document.getElementById('watchlistTableBody');
 
-    if (!data.data?.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--muted); padding: 24px;">Watchlist kosong</td></tr>';
-      return;
+      if (!data.data?.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--muted); padding: 24px;">Watchlist kosong</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.data.map(r => `
+        <tr>
+          <td style="font-weight: 600;">${r.label || '-'}</td>
+          <td style="font-family: var(--mono); font-size: 0.85rem;">${r.query}</td>
+          <td><span class="badge ${r.query_type}">${r.query_type}</span></td>
+          <td style="font-size: 0.78rem; color: var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
+          <td><button class="btn-del" onclick="deleteWatchlist(${r.id}, this)">Hapus</button></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      document.getElementById('watchlistTableBody').innerHTML =
+        `<tr><td colspan="5" style="text-align:center; color: var(--muted); padding: 24px;">Backend tidak tersedia (mode demo)</td></tr>`;
     }
-
-    tbody.innerHTML = data.data.map(r => `
-      <tr>
-        <td style="font-weight: 600;">${r.label || '-'}</td>
-        <td style="font-family: var(--mono); font-size: 0.85rem;">${r.query}</td>
-        <td><span class="badge ${r.query_type}">${r.query_type}</span></td>
-        <td style="font-size: 0.78rem; color: var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
-        <td><button class="btn-del" onclick="deleteWatchlist(${r.id}, this)">Hapus</button></td>
-      </tr>
-    `).join('');
   }
 
   async function addWatchlist() {
@@ -1059,32 +1192,45 @@
 
     if (!query) return alert('Masukkan query');
 
-    await fetch('/api/watchlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, type, label })
-    });
-
-    document.getElementById('wlQuery').value = '';
-    document.getElementById('wlLabel').value = '';
-    loadWatchlist();
+    try {
+      await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, type, label })
+      });
+      document.getElementById('wlQuery').value = '';
+      document.getElementById('wlLabel').value = '';
+      loadWatchlist();
+    } catch (e) {
+      alert('Gagal menambah: ' + e.message);
+    }
   }
 
   async function deleteWatchlist(id, btn) {
-    await fetch('/api/watchlist/' + id, { method: 'DELETE' });
-    btn.closest('tr').remove();
+    try {
+      await fetch('/api/watchlist/' + id, { method: 'DELETE' });
+      btn.closest('tr').remove();
+    } catch (e) {
+      alert('Gagal menghapus: ' + e.message);
+    }
   }
 
   // ---- STATS ----
   async function loadStats() {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
-    const s = data.data;
-
-    document.getElementById('stat-total').textContent = s.total_searches || 0;
-    document.getElementById('stat-breaches').textContent = s.total_breaches_found || 0;
-    document.getElementById('stat-critical').textContent = s.critical_count || 0;
-    document.getElementById('stat-safe').textContent = s.safe_count || 0;
+    try {
+      const res = await fetch('/api/stats');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const s = data.data;
+      document.getElementById('stat-total').textContent = s.total_searches || 0;
+      document.getElementById('stat-breaches').textContent = s.total_breaches_found || 0;
+      document.getElementById('stat-critical').textContent = s.critical_count || 0;
+      document.getElementById('stat-safe').textContent = s.safe_count || 0;
+    } catch (e) {
+      ['stat-total','stat-breaches','stat-critical','stat-safe'].forEach(id => {
+        document.getElementById(id).textContent = '-';
+      });
+    }
   }
 </script>
 
