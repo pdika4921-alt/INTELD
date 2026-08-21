@@ -36,7 +36,7 @@ function calculateRisk(breachCount, dataClasses = []) {
 // =============================================
 async function checkHIBP(email) {
   const apiKey = process.env.HIBP_API_KEY;
-  if (!apiKey || apiKey === 'your_hibp_api_key_here') {
+  if (!apiKey || ['your_hibp_api_key_here', 'dummy'].includes(apiKey)) {
     return {
       source: 'HaveIBeenPwned', status: 'demo',
       breaches: [
@@ -83,7 +83,9 @@ async function checkEmailRep(email) {
 // =============================================
 async function checkLeakCheck(query, type = 'email') {
   const apiKey = process.env.LEAKCHECK_API_KEY;
-  if (!apiKey || apiKey === 'your_leakcheck_key_here') {
+  const dummyKeys = ['your_leakcheck_key_here', 'dummy', '', null, undefined];
+  
+  if (!apiKey || dummyKeys.includes(apiKey)) {
     return {
       source: 'LeakCheck', status: 'demo', found: 3,
       results: [
@@ -93,18 +95,30 @@ async function checkLeakCheck(query, type = 'email') {
       ]
     };
   }
+
   try {
     const r = await axios.get(
-  `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
-  { 
-    headers: { 'X-API-Key': apiKey },
-    params: { type: type },
-    timeout: 10000 
-  }
-);
+      `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
+      {
+        headers: { 
+          'X-API-Key': apiKey,
+          'User-Agent': 'BreachIntelTool'
+        },
+        timeout: 10000
+      }
+    );
     return { source: 'LeakCheck', status: 'success', ...r.data };
   } catch (err) {
-    return { source: 'LeakCheck', status: 'error', message: err.message };
+    // Coba endpoint lama sebagai fallback
+    try {
+      const r2 = await axios.get(
+        `https://leakcheck.io/api?key=${apiKey}&check=${encodeURIComponent(query)}&type=${type}`,
+        { timeout: 10000 }
+      );
+      return { source: 'LeakCheck', status: 'success', ...r2.data };
+    } catch (err2) {
+      return { source: 'LeakCheck', status: 'error', message: err2.message };
+    }
   }
 }
 
