@@ -94,7 +94,14 @@ async function checkLeakCheck(query, type = 'email') {
     };
   }
   try {
-    const r = await axios.get(`https://leakcheck.io/api/public?key=${apiKey}&check=${encodeURIComponent(query)}&type=${type}`, { timeout: 10000 });
+    const r = await axios.get(
+  `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
+  { 
+    headers: { 'X-API-Key': apiKey },
+    params: { type: type },
+    timeout: 10000 
+  }
+);
     return { source: 'LeakCheck', status: 'success', ...r.data };
   } catch (err) {
     return { source: 'LeakCheck', status: 'error', message: err.message };
