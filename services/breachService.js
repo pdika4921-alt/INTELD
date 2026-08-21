@@ -96,31 +96,20 @@ async function checkLeakCheck(query, type = 'email') {
     };
   }
 
-  try {
-    const r = await axios.get(
-      `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
-      {
-        headers: { 
-          'X-API-Key': apiKey,
-          'User-Agent': 'BreachIntelTool'
-        },
-        timeout: 10000
-      }
-    );
+    try {
+    const r = await axios({
+      method: 'get',
+      url: `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
+      headers: { 
+        'X-API-Key': apiKey.trim(),
+        'Accept': 'application/json'
+      },
+      timeout: 10000
+    });
     return { source: 'LeakCheck', status: 'success', ...r.data };
   } catch (err) {
-    // Coba endpoint lama sebagai fallback
-    try {
-      const r2 = await axios.get(
-        `https://leakcheck.io/api?key=${apiKey}&check=${encodeURIComponent(query)}&type=${type}`,
-        { timeout: 10000 }
-      );
-      return { source: 'LeakCheck', status: 'success', ...r2.data };
-    } catch (err2) {
-      return { source: 'LeakCheck', status: 'error', message: err2.message };
-    }
+    return { source: 'LeakCheck', status: 'error', message: err.response?.data?.error || err.message };
   }
-}
 
 // =============================================
 // 4. NumVerify - Validasi & Info Operator
