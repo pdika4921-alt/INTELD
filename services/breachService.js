@@ -24,17 +24,65 @@ function calculateRisk(breachCount, dataClasses = []) {
   return 'LOW';
 }
 
+// =============================================
+// 1. XposedOrNot - GRATIS, tanpa API key
+// =============================================
+async function checkXposedOrNot(email) {
+  try {
+    const r = await axios.get(
+      `https://api.xposedornot.com/v1/check-email/${encodeURIComponent(email)}`,
+      { headers: { 'User-Agent': 'BreachIntelTool' }, timeout: 10000 }
+    );
+    const data = r.data;
+    // Format jadi breach list
+    const breaches = (data.breaches || []).map(b => ({
+      Name: b.breachID || b.name || 'Unknown',
+      BreachDate: b.breachDate || '-',
+      DataClasses: b.exposedData || [],
+      IsVerified: true,
+      PwnCount: b.exposedRecords || 0,
+      Description: b.description || ''
+    }));
+    return { source: 'XposedOrNot', status: 'success', breaches, xon_data: data };
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return { source: 'XposedOrNot', status: 'success', breaches: [], message: 'Tidak ditemukan di database' };
+    }
+    return { source: 'XposedOrNot', status: 'error', message: err.message, breaches: [] };
+  }
+}
+
+// =============================================
+// 2. HackMyIP - GRATIS, tanpa API key
+// =============================================
+async function checkHackMyIP(email) {
+  try {
+    const r = await axios.get(
+      `https://hackmyip.com/api/breach?email=${encodeURIComponent(email)}`,
+      { headers: { 'User-Agent': 'BreachIntelTool' }, timeout: 10000 }
+    );
+    const data = r.data?.data || r.data;
+    return {
+      source: 'HackMyIP', status: 'success',
+      found: data.breaches || 0,
+      risk: data.risk || {},
+      services: data.services || [],
+      passwords: data.passwords || {},
+      raw: data
+    };
+  } catch (err) {
+    return { source: 'HackMyIP', status: 'error', message: err.message };
+  }
+}
+
+// =============================================
+// 3. HIBP - Berbayar (demo jika tidak ada key)
+// =============================================
 async function checkHIBP(email) {
   const apiKey = process.env.HIBP_API_KEY;
   const isDummy = !apiKey || ['your_hibp_api_key_here','dummy'].includes(apiKey);
   if (isDummy) {
-    return {
-      source: 'HaveIBeenPwned', status: 'demo',
-      breaches: [
-        { Name: 'Adobe', BreachDate: '2013-10-04', DataClasses: ['Email addresses','Passwords','Password hints','Usernames'], IsVerified: true, PwnCount: 152445165 },
-        { Name: 'LinkedIn', BreachDate: '2016-05-22', DataClasses: ['Email addresses','Passwords'], IsVerified: true, PwnCount: 164611595 }
-      ]
-    };
+    return { source: 'HaveIBeenPwned', status: 'no_key', breaches: [] };
   }
   try {
     const r = await axios.get(
@@ -48,16 +96,14 @@ async function checkHIBP(email) {
   }
 }
 
+// =============================================
+// 4. EmailRep.io
+// =============================================
 async function checkEmailRep(email) {
   const apiKey = process.env.EMAILREP_API_KEY;
   const isDummy = !apiKey || ['your_emailrep_key_here','dummy'].includes(apiKey);
   if (isDummy) {
-    return {
-      source: 'EmailRep.io', status: 'demo',
-      data: { email, reputation: 'medium', suspicious: false, references: 42,
-        details: { blacklisted: false, credentials_leaked: true, data_breach: true, first_seen: '2015-01-01', last_seen: '2024-12-01', profiles: ['facebook','linkedin','twitter'] }
-      }
-    };
+    return { source: 'EmailRep.io', status: 'no_key' };
   }
   try {
     const r = await axios.get(`https://emailrep.io/${encodeURIComponent(email)}`,
@@ -68,36 +114,9 @@ async function checkEmailRep(email) {
   }
 }
 
-async function checkLeakCheck(query, type = 'email') {
-  const apiKey = process.env.LEAKCHECK_API_KEY;
-  const isDummy = !apiKey || ['your_leakcheck_key_here','dummy'].includes(apiKey);
-  if (isDummy) {
-    return {
-      source: 'LeakCheck', status: 'demo', found: 3,
-      results: [
-        { source: { name: 'Collection#1', breach_date: '2019-01-07' }, line: `${query}:password123` },
-        { source: { name: 'Verifications.io', breach_date: '2019-02-25' }, line: `${query}:p@ssw0rd` },
-        { source: { name: 'Exploit.in', breach_date: '2015-01-01' }, line: `${query}:qwerty123` }
-      ]
-    };
-  }
-  try {
-    const r = await axios({
-      method: 'get',
-      url: `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
-      headers: {
-        'X-API-Key': apiKey.trim(),
-        'Accept': 'application/json',
-        'User-Agent': 'BreachIntelTool'
-      },
-      timeout: 10000
-    });
-    return { source: 'LeakCheck', status: 'success', ...r.data };
-  } catch (err) {
-    return { source: 'LeakCheck', status: 'error', message: err.response?.data?.error || err.message };
-  }
-}
-
+// =============================================
+// 5. NumVerify - Phone
+// =============================================
 async function checkNumVerify(phone) {
   const apiKey = process.env.NUMVERIFY_API_KEY;
   const normalized = normalizePhone(phone);
@@ -130,6 +149,9 @@ async function checkNumVerify(phone) {
   }
 }
 
+// =============================================
+// 6. AbstractAPI Phone
+// =============================================
 async function checkAbstractPhone(phone) {
   const apiKey = process.env.ABSTRACTAPI_PHONE_KEY;
   const normalized = normalizePhone(phone);
@@ -157,20 +179,17 @@ async function checkAbstractPhone(phone) {
   }
 }
 
+// =============================================
+// 7. Hunter.io - Domain
+// =============================================
 async function checkHunter(domain) {
   const apiKey = process.env.HUNTER_API_KEY;
   const isDummy = !apiKey || ['your_hunter_key_here','dummy'].includes(apiKey);
   if (isDummy) {
     return {
       source: 'Hunter.io', status: 'demo',
-      data: { domain, organization: 'Demo Organization', emails_found: 127,
-        emails: [
-          { value: `admin@${domain}`, type: 'generic', confidence: 95 },
-          { value: `info@${domain}`, type: 'generic', confidence: 90 },
-          { value: `support@${domain}`, type: 'generic', confidence: 85 }
-        ],
-        technologies: ['WordPress','Cloudflare','Google Analytics']
-      }
+      data: { domain, organization: 'Demo Organization', emails_found: 0,
+        emails: [], technologies: [] }
     };
   }
   try {
@@ -184,13 +203,16 @@ async function checkHunter(domain) {
   }
 }
 
+// =============================================
+// 8. Shodan - Domain
+// =============================================
 async function checkShodan(domain) {
   const apiKey = process.env.SHODAN_API_KEY;
   const isDummy = !apiKey || ['your_shodan_key_here','dummy'].includes(apiKey);
   if (isDummy) {
     return {
       source: 'Shodan', status: 'demo',
-      data: { domain, subdomains: ['www','mail','ftp','api','dev'], open_ports: [80,443,22,3306], vulnerabilities: ['CVE-2021-44228','CVE-2022-0778'], tags: ['self-signed','cloud'] }
+      data: { domain, subdomains: [], open_ports: [], vulnerabilities: [], tags: [] }
     };
   }
   try {
@@ -204,41 +226,56 @@ async function checkShodan(domain) {
   }
 }
 
+// =============================================
+// MAIN
+// =============================================
 async function runIntelligence(query, type) {
   const results = { query, type, sources: [], summary: {}, phone_normalized: null };
   let totalBreaches = 0;
   let allDataClasses = [];
 
   if (type === 'email') {
-    const [hibp, emailrep, leakcheck] = await Promise.allSettled([
-      checkHIBP(query), checkEmailRep(query), checkLeakCheck(query, 'email')
+    const [xon, hackmyip, hibp, emailrep] = await Promise.allSettled([
+      checkXposedOrNot(query),
+      checkHackMyIP(query),
+      checkHIBP(query),
+      checkEmailRep(query)
     ]);
-    const hibpData = hibp.value || {}, emailrepData = emailrep.value || {}, leakData = leakcheck.value || {};
-    results.sources.push(hibpData, emailrepData, leakData);
-    totalBreaches = (hibpData.breaches?.length || 0) + (leakData.found || 0);
+    const xonData = xon.value || {};
+    const hackData = hackmyip.value || {};
+    const hibpData = hibp.value || {};
+    const emailrepData = emailrep.value || {};
+
+    results.sources.push(xonData, hackData, hibpData, emailrepData);
+
+    totalBreaches = Math.max(
+      xonData.breaches?.length || 0,
+      hackData.found || 0,
+      hibpData.breaches?.length || 0
+    );
+    xonData.breaches?.forEach(b => allDataClasses.push(...(b.DataClasses || [])));
     hibpData.breaches?.forEach(b => allDataClasses.push(...(b.DataClasses || [])));
 
   } else if (type === 'phone') {
     const normalized = normalizePhone(query);
     results.phone_normalized = normalized;
-    const [numverify, abstractapi, leakcheck] = await Promise.allSettled([
-      checkNumVerify(query), checkAbstractPhone(query), checkLeakCheck(normalized.e164, 'phone')
+    const [numverify, abstractapi] = await Promise.allSettled([
+      checkNumVerify(query), checkAbstractPhone(query)
     ]);
-    const nvData = numverify.value || {}, abData = abstractapi.value || {}, lcData = leakcheck.value || {};
-    results.sources.push(nvData, abData, lcData);
-    totalBreaches = lcData.found || 0;
+    results.sources.push(numverify.value || {}, abstractapi.value || {});
+    totalBreaches = 0;
 
   } else if (type === 'domain') {
-    const [hibp, hunter, shodan] = await Promise.allSettled([
-      checkHIBP(query), checkHunter(query), checkShodan(query)
+    const [xon, hunter, shodan] = await Promise.allSettled([
+      checkXposedOrNot(query), checkHunter(query), checkShodan(query)
     ]);
-    results.sources.push(hibp.value || {}, hunter.value || {}, shodan.value || {});
-    totalBreaches = hibp.value?.breaches?.length || 0;
+    results.sources.push(xon.value || {}, hunter.value || {}, shodan.value || {});
+    totalBreaches = xon.value?.breaches?.length || 0;
 
   } else if (type === 'name') {
-    const leakcheck = await checkLeakCheck(query, 'name');
-    results.sources.push(leakcheck);
-    totalBreaches = leakcheck.found || 0;
+    const hackmyip = await checkHackMyIP(query);
+    results.sources.push(hackmyip);
+    totalBreaches = hackmyip.found || 0;
   }
 
   results.summary = {
