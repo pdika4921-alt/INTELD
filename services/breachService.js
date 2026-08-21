@@ -1,12 +1,8 @@
 const axios = require('axios');
 require('dotenv').config();
 
-// =============================================
-// HELPER: Normalisasi nomor telepon
-// =============================================
 function normalizePhone(raw) {
   let num = raw.replace(/[\s\-().+]/g, '');
-  // Indonesia: 08xx → +628xx
   if (num.startsWith('08')) num = '+62' + num.slice(1);
   else if (num.startsWith('628')) num = '+' + num;
   else if (!num.startsWith('+')) num = '+' + num;
@@ -18,9 +14,6 @@ function normalizePhone(raw) {
   };
 }
 
-// =============================================
-// HELPER: Hitung Risk Level
-// =============================================
 function calculateRisk(breachCount, dataClasses = []) {
   const sensitiveData = ['Passwords','Credit cards','Bank account numbers','Social security numbers','Phone numbers'];
   const hasSensitive = dataClasses.some(d => sensitiveData.some(s => d.toLowerCase().includes(s.toLowerCase())));
@@ -31,12 +24,10 @@ function calculateRisk(breachCount, dataClasses = []) {
   return 'LOW';
 }
 
-// =============================================
-// 1. HaveIBeenPwned - Email & Domain
-// =============================================
 async function checkHIBP(email) {
   const apiKey = process.env.HIBP_API_KEY;
-  if (!apiKey || ['your_hibp_api_key_here', 'dummy'].includes(apiKey)) {
+  const isDummy = !apiKey || ['your_hibp_api_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     return {
       source: 'HaveIBeenPwned', status: 'demo',
       breaches: [
@@ -57,12 +48,10 @@ async function checkHIBP(email) {
   }
 }
 
-// =============================================
-// 2. EmailRep.io - Reputasi Email
-// =============================================
 async function checkEmailRep(email) {
   const apiKey = process.env.EMAILREP_API_KEY;
-  if (!apiKey || apiKey === 'your_emailrep_key_here') {
+  const isDummy = !apiKey || ['your_emailrep_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     return {
       source: 'EmailRep.io', status: 'demo',
       data: { email, reputation: 'medium', suspicious: false, references: 42,
@@ -71,21 +60,18 @@ async function checkEmailRep(email) {
     };
   }
   try {
-    const r = await axios.get(`https://emailrep.io/${encodeURIComponent(email)}`, { headers: { 'Key': apiKey, 'User-Agent': 'BreachIntelTool' }, timeout: 8000 });
+    const r = await axios.get(`https://emailrep.io/${encodeURIComponent(email)}`,
+      { headers: { 'Key': apiKey, 'User-Agent': 'BreachIntelTool' }, timeout: 8000 });
     return { source: 'EmailRep.io', status: 'success', data: r.data };
   } catch (err) {
     return { source: 'EmailRep.io', status: 'error', message: err.message };
   }
 }
 
-// =============================================
-// 3. LeakCheck - Email, Phone, Name
-// =============================================
 async function checkLeakCheck(query, type = 'email') {
   const apiKey = process.env.LEAKCHECK_API_KEY;
-  const dummyKeys = ['your_leakcheck_key_here', 'dummy', '', null, undefined];
-  
-  if (!apiKey || dummyKeys.includes(apiKey)) {
+  const isDummy = !apiKey || ['your_leakcheck_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     return {
       source: 'LeakCheck', status: 'demo', found: 3,
       results: [
@@ -95,14 +81,14 @@ async function checkLeakCheck(query, type = 'email') {
       ]
     };
   }
-
-    try {
+  try {
     const r = await axios({
       method: 'get',
       url: `https://leakcheck.io/api/v2/query/${encodeURIComponent(query)}`,
-      headers: { 
+      headers: {
         'X-API-Key': apiKey.trim(),
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'User-Agent': 'BreachIntelTool'
       },
       timeout: 10000
     });
@@ -110,24 +96,19 @@ async function checkLeakCheck(query, type = 'email') {
   } catch (err) {
     return { source: 'LeakCheck', status: 'error', message: err.response?.data?.error || err.message };
   }
+}
 
-// =============================================
-// 4. NumVerify - Validasi & Info Operator
-// =============================================
 async function checkNumVerify(phone) {
   const apiKey = process.env.NUMVERIFY_API_KEY;
   const normalized = normalizePhone(phone);
   const e164clean = normalized.e164.replace('+', '');
-
-  if (!apiKey || apiKey === 'your_numverify_key_here') {
+  const isDummy = !apiKey || ['your_numverify_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     const isIndonesia = normalized.country_code === 'ID';
     return {
-      source: 'NumVerify', status: 'demo',
-      normalized,
+      source: 'NumVerify', status: 'demo', normalized,
       data: {
-        valid: true,
-        number: normalized.e164,
-        local_format: normalized.local,
+        valid: true, number: normalized.e164, local_format: normalized.local,
         international_format: normalized.e164,
         country_prefix: isIndonesia ? '+62' : '+1',
         country_code: normalized.country_code,
@@ -138,7 +119,6 @@ async function checkNumVerify(phone) {
       }
     };
   }
-
   try {
     const r = await axios.get(
       `http://apilayer.net/api/validate?access_key=${apiKey}&number=${e164clean}&format=1`,
@@ -150,19 +130,15 @@ async function checkNumVerify(phone) {
   }
 }
 
-// =============================================
-// 5. AbstractAPI - Carrier & Line Type
-// =============================================
 async function checkAbstractPhone(phone) {
   const apiKey = process.env.ABSTRACTAPI_PHONE_KEY;
   const normalized = normalizePhone(phone);
-
-  if (!apiKey || apiKey === 'your_abstractapi_phone_key_here') {
+  const isDummy = !apiKey || ['your_abstractapi_phone_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     return {
       source: 'AbstractAPI Phone', status: 'demo',
       data: {
-        phone: normalized.e164,
-        valid: true,
+        phone: normalized.e164, valid: true,
         format: { international: normalized.e164, local: normalized.local },
         country: { code: normalized.country_code, name: normalized.country_code === 'ID' ? 'Indonesia' : 'International', prefix: normalized.country_code === 'ID' ? '+62' : '+1' },
         connection: { current_carrier: 'Telkomsel', original_carrier: 'Telkomsel', line_type: 'mobile' },
@@ -170,7 +146,6 @@ async function checkAbstractPhone(phone) {
       }
     };
   }
-
   try {
     const r = await axios.get(
       `https://phonevalidation.abstractapi.com/v1/?api_key=${apiKey}&phone=${encodeURIComponent(normalized.e164)}`,
@@ -182,12 +157,10 @@ async function checkAbstractPhone(phone) {
   }
 }
 
-// =============================================
-// 6. Hunter.io - Domain Intelligence
-// =============================================
 async function checkHunter(domain) {
   const apiKey = process.env.HUNTER_API_KEY;
-  if (!apiKey || apiKey === 'your_hunter_key_here') {
+  const isDummy = !apiKey || ['your_hunter_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     return {
       source: 'Hunter.io', status: 'demo',
       data: { domain, organization: 'Demo Organization', emails_found: 127,
@@ -201,35 +174,36 @@ async function checkHunter(domain) {
     };
   }
   try {
-    const r = await axios.get(`https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&api_key=${apiKey}&limit=10`, { timeout: 10000 });
+    const r = await axios.get(
+      `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&api_key=${apiKey}&limit=10`,
+      { timeout: 10000 }
+    );
     return { source: 'Hunter.io', status: 'success', data: r.data.data };
   } catch (err) {
     return { source: 'Hunter.io', status: 'error', message: err.message };
   }
 }
 
-// =============================================
-// 7. Shodan - Port/CVE Exposure
-// =============================================
 async function checkShodan(domain) {
   const apiKey = process.env.SHODAN_API_KEY;
-  if (!apiKey || apiKey === 'your_shodan_key_here') {
+  const isDummy = !apiKey || ['your_shodan_key_here','dummy'].includes(apiKey);
+  if (isDummy) {
     return {
       source: 'Shodan', status: 'demo',
       data: { domain, subdomains: ['www','mail','ftp','api','dev'], open_ports: [80,443,22,3306], vulnerabilities: ['CVE-2021-44228','CVE-2022-0778'], tags: ['self-signed','cloud'] }
     };
   }
   try {
-    const r = await axios.get(`https://api.shodan.io/dns/domain/${encodeURIComponent(domain)}?key=${apiKey}`, { timeout: 10000 });
+    const r = await axios.get(
+      `https://api.shodan.io/dns/domain/${encodeURIComponent(domain)}?key=${apiKey}`,
+      { timeout: 10000 }
+    );
     return { source: 'Shodan', status: 'success', data: r.data };
   } catch (err) {
     return { source: 'Shodan', status: 'error', message: err.message };
   }
 }
 
-// =============================================
-// MAIN: Jalankan Intelligence per tipe
-// =============================================
 async function runIntelligence(query, type) {
   const results = { query, type, sources: [], summary: {}, phone_normalized: null };
   let totalBreaches = 0;
@@ -245,14 +219,10 @@ async function runIntelligence(query, type) {
     hibpData.breaches?.forEach(b => allDataClasses.push(...(b.DataClasses || [])));
 
   } else if (type === 'phone') {
-    // Normalisasi dulu
     const normalized = normalizePhone(query);
     results.phone_normalized = normalized;
-
     const [numverify, abstractapi, leakcheck] = await Promise.allSettled([
-      checkNumVerify(query),
-      checkAbstractPhone(query),
-      checkLeakCheck(normalized.e164, 'phone')
+      checkNumVerify(query), checkAbstractPhone(query), checkLeakCheck(normalized.e164, 'phone')
     ]);
     const nvData = numverify.value || {}, abData = abstractapi.value || {}, lcData = leakcheck.value || {};
     results.sources.push(nvData, abData, lcData);
@@ -281,4 +251,4 @@ async function runIntelligence(query, type) {
   return results;
 }
 
-module.exports = { runIntelligence, normalizePhone }};
+module.exports = { runIntelligence, normalizePhone };
