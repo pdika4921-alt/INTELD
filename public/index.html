@@ -567,10 +567,10 @@
 </header>
 
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('search')">🔎 Pencarian</button>
-  <button class="tab-btn" onclick="switchTab('history')">📋 Riwayat</button>
-  <button class="tab-btn" onclick="switchTab('watchlist')">👁️ Watchlist</button>
-  <button class="tab-btn" onclick="switchTab('stats')">📊 Statistik</button>
+  <button class="tab-btn active" onclick="switchTab('search', event)">🔎 Pencarian</button>
+  <button class="tab-btn" onclick="switchTab('history', event)">📋 Riwayat</button>
+  <button class="tab-btn" onclick="switchTab('watchlist', event)">👁️ Watchlist</button>
+  <button class="tab-btn" onclick="switchTab('stats', event)">📊 Statistik</button>
 </div>
 
 <main>
@@ -707,11 +707,12 @@
   let selectedType = 'email';
 
   // ---- TAB SWITCHING ----
-  function switchTab(name) {
+  function switchTab(name, e) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
-    event.target.classList.add('active');
+    const btn = (e && e.currentTarget) || (typeof event !== 'undefined' && event && event.target);
+    if (btn) btn.classList.add('active');
 
     if (name === 'history') loadHistory();
     if (name === 'watchlist') loadWatchlist();
@@ -734,7 +735,7 @@
   }
 
   // ---- SEARCH ----
-  async function runSearch() {
+ async function runSearch() {
     const query = document.getElementById('queryInput').value.trim();
     if (!query) return alert('Masukkan data yang ingin dicari');
 
@@ -745,15 +746,24 @@
     document.getElementById('results').innerHTML = '';
 
     try {
-      const res = await fetch('/api/search', {
+      const serverPromise = fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, type: selectedType })
       });
-      const data = await res.json();
 
-      if (data.success) renderResults(data.data);
-      else alert('Error: ' + data.error);
+      if (!serverPromise.ok) {
+        const errJson = await serverPromise.json().catch(() => ({}));
+        throw new Error(errJson.error || ('HTTP ' + serverPromise.status));
+      }
+
+      const serverData = await serverPromise.json();
+
+      if (serverData?.success) {
+        renderResults(serverData.data);
+      } else {
+        alert('Error: ' + (serverData?.error || 'Koneksi gagal'));
+      }
     } catch (err) {
       alert('Koneksi error: ' + err.message);
     } finally {
@@ -821,6 +831,11 @@
       </div>`;
     }
 
+    const hasLive = (sources || []).some(s => s && s.status === 'success');
+    if (!hasLive) {
+      html = `<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35);color:#f59e0b;border-radius:10px;padding:10px 14px;margin-bottom:18px;font-size:0.8rem;">⚠️ Mode DEMO: sumber berbayar nonaktif (tanpa API key). <b>XposedOrNot</b> &amp; <b>HackMyIP</b> tetap mengambil <b>data nyata</b> tanpa key. Tambahkan API key di <code>.env</code> untuk sumber lain (HIBP, EmailRep, Hunter, Shodan, dll).</div>` + html;
+    }
+
     html += '<div class="sources-grid">';
 
     sources.forEach(src => {
@@ -878,6 +893,19 @@
           </div>
         `).join('')}
         ${src.results.length > 3 ? `<p style="font-size: 0.75rem; color: var(--muted); text-align: center; padding-top: 8px;">+${src.results.length - 3} lagi</p>` : ''}
+      `;
+    }
+
+    // HackMyIP
+    if (src.source === 'HackMyIP') {
+      const found = src.found || 0;
+      const services = src.services || [];
+      const passwords = src.passwords || {};
+      if (found === 0 && services.length === 0) return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
+      return `
+        <p style="color: var(--warning); font-size: 0.8rem; margin-bottom: 10px;">⚠️ ${found} layanan/breach ditemukan</p>
+        <div class="data-tags">${services.slice(0, 10).map(s => `<span class="data-tag">${s}</span>`).join('')}</div>
+        ${passwords && Object.keys(passwords).length ? `<p style="font-size:0.75rem; color: var(--muted); margin-top:10px;">🔑 Password terdeteksi di: ${Object.keys(passwords).join(', ')}</p>` : ''}
       `;
     }
 
