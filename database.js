@@ -42,7 +42,20 @@ sqlite.exec(`
     is_active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
+    created_at TEXT NOT NULL
+  );
 `);
+
+// Kolom result_json untuk riwayat klik-able (migrasi aman)
+try {
+  sqlite.exec(`ALTER TABLE search_history ADD COLUMN result_json TEXT;`);
+} catch { /* kolom sudah ada */ }
 
 // Migrasi otomatis dari JSON lama (sekali saja)
 const OLD_JSON = path.join(DATA_DIR, 'breach_intel.json');
@@ -71,8 +84,9 @@ const db = {
     try {
       let info;
       if (sql.includes('INSERT INTO search_history')) {
-        info = sqlite.prepare(`INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
-          .run(params[0], params[1], String(params[2] || ''), params[3], params[4], new Date().toISOString());
+        // params: [query, type, summary, breach_count, risk, result_json?]
+        info = sqlite.prepare(`INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, created_at, result_json) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .run(params[0], params[1], String(params[2] || ''), params[3], params[4], new Date().toISOString(), params[5] ? String(params[5]) : null);
       }
       else if (sql.includes('INSERT INTO breach_results')) {
         info = sqlite.prepare(`INSERT INTO breach_results (search_id, source, breach_name, breach_date, data_classes, description, is_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)

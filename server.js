@@ -24,9 +24,29 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const session = require('express-session');
 const cron = require('node-cron');
+const crypto = require('crypto');
 const db = require('./database');
 const { runIntelligence, normalizePhone } = require('./services/breachService');
 const axios = require('axios');
+
+// =============================================
+// MULTI-USER: hash password + seed admin default
+// =============================================
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+(function seedAdmin() {
+  const count = db.raw.prepare(`SELECT COUNT(*) AS c FROM users`).get().c;
+  if (count === 0) {
+    const u = process.env.ADMIN_USERNAME || 'admin';
+    const p = process.env.ADMIN_PASSWORD || 'admin123';
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.raw.prepare(`INSERT INTO users (username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(u, hashPassword(p, salt), salt, 'admin', new Date().toISOString());
+    console.log(`👤 Admin default dibuat: ${u} (password dari .env)`);
+  }
+})();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -85,12 +105,72 @@ const loginLimiter = rateLimit({
 app.post('/api/login', loginLimiter, (req, res) => {
   if (!ADMIN_PASS) return res.json({ success: true, message: 'Mode terbuka (password belum diset)' });
   const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(401).json({ success: false, error: 'Username dan password wajib diisi' });
+  }
+
+  // 1. Cek user dari database
+  const user = db.raw.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
+  if (user) {
+    const hash = hashPassword(password, user.salt);
+    if (crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(user.password_hash))) {
+      req.session.authenticated = true;
+      req.session.username = user.username;
+      req.session.role = user.role;
+      return res.json({ success: true, role: user.role, username: user.username });
+    }
+    // user ada tapi password salah
+    setTimeout(() => res.status(401).json({ success: false, error: 'Username atau password salah' }), 600);
+    return;
+  }
+
+  // 2. Fallback admin dari .env
   if (username === ADMIN_USER && password === ADMIN_PASS) {
     req.session.authenticated = true;
-    return res.json({ success: true });
+    req.session.username = ADMIN_USER;
+    req.session.role = 'admin';
+    return res.json({ success: true, role: 'admin', username: ADMIN_USER });
   }
+
   // Delay kecil anti brute-force
   setTimeout(() => res.status(401).json({ success: false, error: 'Username atau password salah' }), 600);
+});
+
+function requireAdmin(req, res, next) {
+  if (req.session?.role !== 'admin') {
+    return res.status(403).json({ error: 'Hanya admin yang boleh mengakses fitur ini' });
+  }
+  next();
+}
+
+// ===== Manajemen User (admin only) =====
+app.get('/api/users', requireAuth, requireAdmin, (req, res) => {
+  const rows = db.raw.prepare(`SELECT id, username, role, created_at FROM users ORDER BY created_at DESC`).all();
+  res.json({ success: true, data: rows });
+});
+
+app.post('/api/users', requireAuth, requireAdmin, (req, res) => {
+  const { username, password, role } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username & password wajib diisi' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password minimal 6 karakter' });
+  const finalRole = ['admin', 'user'].includes(role) ? role : 'user';
+  try {
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.raw.prepare(`INSERT INTO users (username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(username.trim(), hashPassword(password, salt), salt, finalRole, new Date().toISOString());
+    res.json({ success: true });
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: 'Username sudah dipakai' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/users/:id', requireAuth, requireAdmin, (req, res) => {
+  const row = db.raw.prepare(`SELECT * FROM users WHERE id = ?`).get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'User tidak ditemukan' });
+  if (row.username === req.session.username) return res.status(400).json({ error: 'Tidak bisa menghapus akun sendiri' });
+  db.raw.prepare(`DELETE FROM users WHERE id = ?`).run(req.params.id);
+  res.json({ success: true });
 });
 
 app.get('/logout', (req, res) => {
@@ -137,16 +217,16 @@ app.get('/api/search', async (req, res) => {
     return res.status(400).json({ error: 'Query pencarian diperlukan' });
   }
 
-  const validTypes = ['email', 'phone', 'domain', 'name', 'location', 'ttl'];
+  const validTypes = ['email', 'phone', 'domain', 'name', 'location', 'ttl', 'username'];
   const searchType = validTypes.includes(type) ? type : 'email';
 
   try {
     const results = await runIntelligence(query.trim(), searchType);
     
-    // Simpan ke history
+    // Simpan ke history + result_json untuk riwayat klik-able
     db.run(
-      `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level) VALUES (?, ?, ?, ?, ?)`,
-      [query.trim(), searchType, JSON.stringify(results.summary), results.summary.total_breaches || 0, results.summary.risk_level || 'SAFE'],
+      `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, result_json) VALUES (?, ?, ?, ?, ?, ?)`,
+      [query.trim(), searchType, JSON.stringify(results.summary), results.summary.total_breaches || 0, results.summary.risk_level || 'SAFE', JSON.stringify(results)],
       (err) => { if (err) console.error('History save error:', err); }
     );
 
@@ -703,8 +783,8 @@ app.post('/api/cross-search', async (req, res) => {
 
     // Simpan history
     db.run(
-      `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level) VALUES (?, ?, ?, ?, ?)`,
-      [results.query, 'cross', JSON.stringify(results.summary), totalBreaches, riskLevel],
+      `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, result_json) VALUES (?, ?, ?, ?, ?, ?)`,
+      [results.query, 'cross', JSON.stringify(results.summary), totalBreaches, riskLevel, JSON.stringify(results)],
       () => {}
     );
 
@@ -735,6 +815,42 @@ app.delete('/api/history/:id', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true, message: 'Riwayat dihapus' });
   });
+});
+
+// API: Detail riwayat lengkap (riwayat klik-able)
+app.get('/api/history/:id', requireAuth, (req, res) => {
+  try {
+    const row = db.raw.prepare(`SELECT * FROM search_history WHERE id = ?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Riwayat tidak ditemukan' });
+    let full = null;
+    try { full = row.result_json ? JSON.parse(row.result_json) : null; } catch { full = null; }
+    res.json({ success: true, data: { ...row, result_json: undefined, full_result: full } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// API: Statistik harian untuk grafik (7 hari terakhir)
+app.get('/api/stats-daily', requireAuth, (req, res) => {
+  try {
+    const rows = db.raw.prepare(`
+      SELECT substr(created_at, 1, 10) as day,
+             COUNT(*) as searches,
+             SUM(breach_count) as breaches
+      FROM search_history
+      WHERE created_at >= date('now', '-6 days')
+      GROUP BY substr(created_at, 1, 10)
+      ORDER BY day ASC
+    `).all();
+    const risks = db.raw.prepare(`
+      SELECT risk_level, COUNT(*) as cnt
+      FROM search_history
+      GROUP BY risk_level
+    `).all();
+    res.json({ success: true, data: { daily: rows, risks } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // API: Watchlist - Tambah

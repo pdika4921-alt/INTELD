@@ -150,6 +150,8 @@ RESTRICTED AREA — AUTHORIZED PERSONNEL ONLY</div>
         })
       });
       if (res.ok) {
+        const j = await res.json();
+        sessionStorage.setItem('bi_role', j.role || 'user');
         window.location.href = '/';
       } else {
         throw new Error();

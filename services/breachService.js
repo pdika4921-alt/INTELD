@@ -466,6 +466,106 @@ async function osintNameSearch(name) {
 }
 
 // =============================================
+// 9. Username OSINT — cek handle di 18+ platform
+// =============================================
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+
+async function probe(url, opts = {}) {
+  try {
+    const r = await axios.get(url, {
+      timeout: 8000,
+      maxRedirects: 5,
+      headers: { 'User-Agent': BROWSER_UA, 'Accept': 'application/json, text/html;q=0.8' },
+      validateStatus: () => true,
+      ...opts
+    });
+    return r;
+  } catch { return null; }
+}
+
+async function checkUsername(username) {
+  const u = encodeURIComponent(username);
+  const found = [];
+  const checked = [];
+
+  const sites = [
+    { name: 'GitHub', url: `https://api.github.com/users/${u}`,
+      check: r => r.status === 200 },
+    { name: 'Reddit', url: `https://www.reddit.com/user/${u}/about.json`,
+      check: r => r.status === 200 && !String(r.data).includes('not found') },
+    { name: 'Telegram', url: `https://t.me/${u}`,
+      check: r => r.status === 200 && !String(r.data).includes('tgme_page_not_found') },
+    { name: 'Steam', url: `https://steamcommunity.com/id/${u}`,
+      check: r => r.status === 200 && !String(r.data).includes('The specified profile could not be found') },
+    { name: 'TikTok', url: `https://www.tiktok.com/@${u}`,
+      check: r => r.status === 200 && String(r.data).includes('"uniqueId"') },
+    { name: 'SoundCloud', url: `https://soundcloud.com/${u}`,
+      check: r => r.status === 200 },
+    { name: 'Pinterest', url: `https://www.pinterest.com/${u}/`,
+      check: r => r.status === 200 },
+    { name: 'Twitch', url: `https://m.twitch.tv/${u}`,
+      check: r => r.status === 200 && !String(r.data).includes('content-not-allowed') },
+    { name: 'GitLab', url: `https://gitlab.com/api/v4/users?username=${u}`,
+      check: r => Array.isArray(r.data) && r.data.length > 0 },
+    { name: 'Docker Hub', url: `https://hub.docker.com/v2/users/${u}/`,
+      check: r => r.status === 200 },
+    { name: 'npm', url: `https://registry.npmjs.org/-/user/org.couchdb.user:${u}`,
+      check: r => r.status === 200 },
+    { name: 'PyPI', url: `https://pypi.org/user/${u}/`,
+      check: r => r.status === 200 },
+    { name: 'WordPress', url: `https://profiles.wordpress.org/${u}/`,
+      check: r => r.status === 200 },
+    { name: 'Spotify', url: `https://open.spotify.com/user/${u}`,
+      check: r => r.status === 200 },
+    { name: 'Last.fm', url: `https://www.last.fm/user/${u}`,
+      check: r => r.status === 200 && !String(r.data).includes('Whoops') },
+    { name: 'Vimeo', url: `https://vimeo.com/${u}`,
+      check: r => r.status === 200 },
+    { name: 'Keybase', url: `https://keybase.io/${u}`,
+      check: r => r.status === 200 },
+    { name: 'Bluesky', url: `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${u}.bsky.social`,
+      check: r => r.status === 200 },
+    { name: 'Instagram', url: `https://www.instagram.com/${u}/`,
+      check: r => r.status === 200, uncertain: true },
+    { name: 'X/Twitter', url: `https://syndication.twitter.com/srv/timeline-profile/screen-name/${u}`,
+      check: r => r.status === 200 && !String(r.data).includes('has been suspended'), uncertain: true }
+  ];
+
+  // Probe paralel per batch (5 sekaligus agar tidak diblokir)
+  for (let i = 0; i < sites.length; i += 5) {
+    const batch = sites.slice(i, i + 5);
+    const results = await Promise.allSettled(
+      batch.map(async site => ({ site, res: await probe(site.url) }))
+    );
+    for (const item of results) {
+      if (item.status !== 'fulfilled') continue;
+      const { site, res } = item.value;
+      checked.push({ platform: site.name, status: res ? res.status : 'timeout' });
+      if (res && site.check(res)) {
+        found.push({
+          context: `${site.uncertain ? '±' : ''} ${site.name} — profil ditemukan`,
+          date: 'Username Match',
+          tags: ['OSINT', 'Account Found'],
+          details: {
+            'Platform': site.name,
+            'URL_Profile': site.url.replace('/api.github.com/users/', '/github.com/').replace('api.github.com/users/', 'github.com/'),
+            'Catatan': site.uncertain ? 'Hasil tidak 100% pasti (platform membatasi bot)' : 'Terverifikasi via respons server'
+          }
+        });
+      }
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  return {
+    source: 'Username OSINT',
+    status: 'success',
+    rawData: found,
+    stats: { total_checked: checked.length, found: found.length }
+  };
+}
+
+// =============================================
 // MAIN
 // =============================================
 async function runIntelligence(query, type) {
@@ -546,6 +646,17 @@ async function runIntelligence(query, type) {
     if (dork.rawData?.length > 0) {
       totalBreaches += dork.rawData.length;
       allDataClasses.push('Public Records');
+    }
+
+  } else if (type === 'username') {
+    // Bersihkan @ prefix
+    const cleanUser = query.replace(/^@/, '').trim();
+    results.query = '@' + cleanUser;
+    const uname = await checkUsername(cleanUser);
+    results.sources.push(uname);
+    totalBreaches = uname.rawData.length;
+    if (uname.rawData.length > 0) {
+      allDataClasses.push('Social Media Accounts');
     }
   }
 

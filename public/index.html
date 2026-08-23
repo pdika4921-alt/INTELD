@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BREACH INTEL — Data Breach Intelligence Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#030803">
   <link rel="icon" type="image/png" href="/icons/icon-192.png">
@@ -1015,6 +1016,13 @@
   ::-webkit-scrollbar-thumb:hover { background: var(--accent2); }
 
   ::selection { background: rgba(0,255,65,0.3); color: #fff; }
+
+  /* ===== TEMA MINIMAL (tanpa animasi berat) ===== */
+  body.minimal #matrixRain,
+  body.minimal .scanlines { display: none !important; }
+  body.minimal .search-hero h1 { animation: none !important; }
+  body.minimal .search-hero h1::before,
+  body.minimal .search-hero h1::after { display: none !important; }
 </style>
 
 <header>
@@ -1034,6 +1042,9 @@
   <button class="tab-btn" onclick="switchTab('watchlist', this)">👁️ Watchlist</button>
   <button class="tab-btn" onclick="switchTab('batch', this)">📦 Batch</button>
   <button class="tab-btn" onclick="switchTab('stats', this)">📊 Statistik</button>
+  <button class="tab-btn" onclick="switchTab('users', this)">👥 Users</button>
+  <button class="tab-btn" onclick="toggleTheme()" title="Ganti tema">🎨</button>
+  <button class="tab-btn" onclick="toggleLang()" id="langBtn" title="Ganti bahasa">EN</button>
 </div>
 
 <main>
@@ -1050,6 +1061,7 @@
         <button class="stype" id="type-phone" onclick="setSearchType('phone')">TELEPON</button>
         <button class="stype" id="type-domain" onclick="setSearchType('domain')">DOMAIN</button>
         <button class="stype" id="type-name" onclick="setSearchType('name')">NAMA</button>
+        <button class="stype" id="type-username" onclick="setSearchType('username')">@USER</button>
       </div>
 
       <div class="search-main-row">
@@ -1193,6 +1205,54 @@
         <div class="stat-label">Data Aman</div>
       </div>
     </div>
+
+    <p class="section-title">Aktivitas 7 Hari Terakhir</p>
+    <div class="source-card" style="padding: 20px; margin-bottom: 20px;">
+      <canvas id="chartDaily" height="120"></canvas>
+    </div>
+
+    <p class="section-title">Distribusi Level Risiko</p>
+    <div class="source-card" style="padding: 20px;">
+      <canvas id="chartRisk" height="140"></canvas>
+    </div>
+  </div>
+
+  <!-- TAB: USERS (ADMIN) -->
+  <div id="tab-users" class="tab-content">
+    <div class="watchlist-form" id="usersAdminPanel">
+      <h3>+ Tambah User Baru</h3>
+      <div class="form-row">
+        <input type="text" id="newUsername" placeholder="username" />
+        <input type="password" id="newPassword" placeholder="password (min 6 karakter)" />
+        <select id="newRole">
+          <option value="user">👤 User biasa</option>
+          <option value="admin">👑 Admin</option>
+        </select>
+        <button class="btn-add" onclick="createUser()">+ Tambah</button>
+      </div>
+    </div>
+    <p class="section-title">Daftar User Terdaftar</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Username</th><th>Role</th><th>Dibuat</th><th></th></tr>
+        </thead>
+        <tbody id="usersTableBody">
+          <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Memuat...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODAL DETAIL RIWAYAT -->
+  <div id="historyModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); overflow-y:auto; padding:24px;" onclick="if(event.target===this) closeHistoryModal()">
+    <div style="max-width:900px; margin:0 auto; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2 style="font-family:var(--mono); color:var(--accent); font-size:1.1rem;" id="hmTitle">Detail Riwayat</h2>
+        <button class="btn-del" onclick="closeHistoryModal()">✕ Tutup</button>
+      </div>
+      <div id="hmContent"></div>
+    </div>
   </div>
 
 </main>
@@ -1213,7 +1273,7 @@
   // ---- TYPE SELECTOR ----
   function setSearchType(type) {
     selectedType = type;
-    document.querySelectorAll('#type-email, #type-phone, #type-domain, #type-name').forEach(btn => {
+    document.querySelectorAll('#type-email, #type-phone, #type-domain, #type-name, #type-username').forEach(btn => {
       btn.classList.remove('active');
       if (btn.id === 'type-' + type) btn.classList.add('active');
     });
@@ -1222,7 +1282,8 @@
       email: 'target@email.com',
       phone: '08123456789 / +6281234567890',
       domain: 'example.com',
-      name: 'nama target...'
+      name: 'nama target...',
+      username: '@username (tanpa @ juga bisa)'
     };
     document.getElementById('queryInput').placeholder = placeholders[type] || placeholders.email;
     
@@ -1306,6 +1367,7 @@
     if (name === 'history') loadHistory();
     if (name === 'watchlist') loadWatchlist();
     if (name === 'stats') loadStats();
+    if (name === 'users') loadUsers();
   }
 
   // ---- FUNGSI BUKA / TUTUP TABEL EKSPANSI ----
@@ -1858,14 +1920,14 @@
       }
 
       tbody.innerHTML = data.data.map(r => `
-        <tr>
+        <tr class="main-row" onclick="viewHistoryDetail(${r.id})" title="Klik untuk lihat detail lengkap">
           <td style="font-family: var(--mono); color: var(--muted); font-size: 0.75rem;">#${r.id}</td>
           <td style="font-family: var(--mono); font-size: 0.85rem;">${r.query}</td>
           <td><span class="badge ${r.query_type}">${r.query_type}</span></td>
           <td style="font-family: var(--mono); color: ${r.breach_count > 0 ? 'var(--danger)' : 'var(--success)'};">${r.breach_count}</td>
           <td><span class="risk-pill ${r.risk_level}">${r.risk_level}</span></td>
           <td style="font-size: 0.78rem; color: var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
-          <td><button class="btn-del" onclick="deleteHistory(${r.id}, this)">Hapus</button></td>
+          <td><button class="btn-del" onclick="event.stopPropagation(); deleteHistory(${r.id}, this)">Hapus</button></td>
         </tr>
       `).join('');
     } catch (e) {
@@ -2055,7 +2117,197 @@
         document.getElementById(id).textContent = '-';
       });
     }
+    loadCharts();
   }
+
+  // ---- CHARTS (Chart.js) ----
+  let chartDaily = null, chartRisk = null;
+  async function loadCharts() {
+    try {
+      const res = await authFetch('/api/stats-daily');
+      const data = await res.json();
+      if (!data.success) return;
+      const green = '#00ff41', dim = '#4a7a52';
+
+      // Grafik harian
+      const dailyCtx = document.getElementById('chartDaily');
+      if (chartDaily) chartDaily.destroy();
+      chartDaily = new Chart(dailyCtx, {
+        type: 'bar',
+        data: {
+          labels: data.data.daily.map(r => r.day.substring(5)),
+          datasets: [
+            { label: 'Pencarian', data: data.data.daily.map(r => r.searches), backgroundColor: 'rgba(0,255,65,0.35)', borderColor: green, borderWidth: 1 },
+            { label: 'Breach Ditemukan', data: data.data.daily.map(r => r.breaches), backgroundColor: 'rgba(255,34,34,0.3)', borderColor: '#ff2222', borderWidth: 1 }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: '#c8e6c9', font: { family: 'monospace' } } } },
+          scales: {
+            x: { ticks: { color: dim }, grid: { color: 'rgba(26,51,32,0.5)' } },
+            y: { ticks: { color: dim }, grid: { color: 'rgba(26,51,32,0.5)' }, beginAtZero: true }
+          }
+        }
+      });
+
+      // Grafik risiko
+      const riskColors = { SAFE: '#00ff41', LOW: '#a3e635', MEDIUM: '#f59e0b', HIGH: '#fb923c', CRITICAL: '#ff2222' };
+      const riskCtx = document.getElementById('chartRisk');
+      if (chartRisk) chartRisk.destroy();
+      chartRisk = new Chart(riskCtx, {
+        type: 'doughnut',
+        data: {
+          labels: data.data.risks.map(r => r.risk_level || '-'),
+          datasets: [{
+            data: data.data.risks.map(r => r.cnt),
+            backgroundColor: data.data.risks.map(r => riskColors[r.risk_level] || dim),
+            borderColor: '#030803',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'right', labels: { color: '#c8e6c9', font: { family: 'monospace' } } } }
+        }
+      });
+    } catch (e) { console.warn('Grafik gagal:', e.message); }
+  }
+
+  // ---- HISTORY DETAIL MODAL ----
+  async function viewHistoryDetail(id) {
+    try {
+      const res = await authFetch('/api/history/' + id);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const row = data.data;
+      document.getElementById('hmTitle').textContent =
+        `#${row.id} · ${row.query} [${row.query_type}]`;
+      
+      const content = document.getElementById('hmContent');
+      if (row.full_result && row.full_result.sources) {
+        // Render pakai renderer hasil pencarian biasa
+        content.innerHTML = '';
+        const tmp = document.createElement('div');
+        renderResults(row.full_result);
+        // pindahkan hasil render dari #results ke modal
+        tmp.innerHTML = document.getElementById('results').innerHTML;
+        document.getElementById('results').innerHTML = '';
+        content.appendChild(tmp);
+        const meta = document.createElement('p');
+        meta.style.cssText = 'font-size:0.75rem;color:var(--muted);margin-top:14px;font-family:var(--mono)';
+        meta.textContent = `Dicari pada: ${new Date(row.created_at).toLocaleString('id-ID')} · Risiko: ${row.risk_level}`;
+        content.prepend(meta);
+      } else {
+        content.innerHTML = `<div class="empty-result">Detail lengkap tidak tersedia (riwayat lama sebelum fitur ini).<br><br>Risiko: ${row.risk_level} · Breach: ${row.breach_count}</div>`;
+      }
+      document.getElementById('historyModal').style.display = 'block';
+    } catch (e) {
+      alert('Gagal memuat detail: ' + e.message);
+    }
+  }
+
+  function closeHistoryModal() {
+    document.getElementById('historyModal').style.display = 'none';
+  }
+
+  // ---- USERS MANAGEMENT (ADMIN) ----
+  let _myRole = sessionStorage.getItem('bi_role') || 'user';
+
+  async function loadUsers() {
+    const tbody = document.getElementById('usersTableBody');
+    try {
+      const res = await authFetch('/api/users');
+      if (res.status === 403) {
+        document.getElementById('usersAdminPanel').style.display = 'none';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--warning); padding:24px;">🔒 Hanya admin yang bisa mengelola user</td></tr>';
+        return;
+      }
+      const data = await res.json();
+      if (!data.data?.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Belum ada user terdaftar</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.data.map(u => `
+        <tr>
+          <td style="font-family:var(--mono); color:var(--muted);">${u.id}</td>
+          <td style="font-weight:600; font-family:var(--mono);">${u.username}${u.username === _myRole ? '' : ''}</td>
+          <td>${u.role === 'admin' ? '<span class="risk-pill HIGH">👑 admin</span>' : '<span class="badge email">user</span>'}</td>
+          <td style="font-size:0.78rem; color:var(--muted);">${new Date(u.created_at).toLocaleDateString('id-ID')}</td>
+          <td><button class="btn-del" onclick="deleteUser(${u.id}, '${u.username}', this)">Hapus</button></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Backend tidak tersedia</td></tr>`;
+    }
+  }
+
+  async function createUser() {
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newPassword').value.trim();
+    const role = document.getElementById('newRole').value;
+    if (!username || !password) return alert('Isi username & password!');
+    try {
+      const res = await authFetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, role })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Gagal');
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newPassword').value = '';
+      loadUsers();
+    } catch (e) {
+      alert('Gagal membuat user: ' + e.message);
+    }
+  }
+
+  async function deleteUser(id, username, btn) {
+    if (!confirm(`Hapus user "${username}"?`)) return;
+    try {
+      const res = await authFetch('/api/users/' + id, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Gagal');
+      btn.closest('tr').remove();
+    } catch (e) {
+      alert('Gagal hapus user: ' + e.message);
+    }
+  }
+
+  // ---- THEME TOGGLE (terminal / minimal) ----
+  function toggleTheme() {
+    document.body.classList.toggle('minimal');
+    localStorage.setItem('bi_theme', document.body.classList.contains('minimal') ? 'minimal' : 'terminal');
+    const rain = document.getElementById('matrixRain');
+    if (rain) rain.style.display = document.body.classList.contains('minimal') ? 'none' : 'block';
+  }
+  if (localStorage.getItem('bi_theme') === 'minimal') {
+    document.addEventListener('DOMContentLoaded', () => toggleTheme());
+  }
+
+  // ---- LANGUAGE TOGGLE (ID/EN) ----
+  const I18N = {
+    id: { scan: 'SCAN', trace: 'TRACE', cross: '>> CROSS-INTELLIGENCE (korelasi multi-parameter)', batchBtn: '>> SCAN SEMUA', checkAll: '🔄 Cek Semua Sekarang', addUser: '+ Tambah User Baru' },
+    en: { scan: 'SCAN', trace: 'TRACE', cross: '>> CROSS-INTELLIGENCE (multi-parameter correlation)', batchBtn: '>> SCAN ALL', checkAll: '🔄 Check All Now', addUser: '+ Add New User' }
+  };
+  let currentLang = localStorage.getItem('bi_lang') || 'id';
+  function toggleLang() {
+    currentLang = currentLang === 'id' ? 'en' : 'id';
+    localStorage.setItem('bi_lang', currentLang);
+    applyLang();
+  }
+  function applyLang() {
+    document.getElementById('langBtn').textContent = currentLang.toUpperCase();
+    const t = I18N[currentLang];
+    const multi = document.querySelector('.multi-collapse summary');
+    if (multi) multi.textContent = t.cross;
+    const bb = document.getElementById('batchBtn');
+    if (bb && !bb.disabled) bb.textContent = t.batchBtn;
+    const ca = document.getElementById('checkAllBtn');
+    if (ca && !ca.disabled) ca.textContent = t.checkAll;
+  }
+  document.addEventListener('DOMContentLoaded', applyLang);
 
   // ---- EXPORT REPORT ----
   function downloadReport() {
