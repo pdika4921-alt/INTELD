@@ -26,7 +26,7 @@ const session = require('express-session');
 const cron = require('node-cron');
 const crypto = require('crypto');
 const db = require('./database');
-const { runIntelligence, normalizePhone } = require('./services/breachService');
+const { runIntelligence, normalizePhone, checkUsername } = require('./services/breachService');
 const axios = require('axios');
 
 // =============================================
@@ -968,6 +968,165 @@ app.get('/share/:token', async (req, res) => {
   } catch (e) {
     res.status(500).send('Error: ' + e.message);
   }
+});
+
+// =============================================
+// TOOL SUITE v2: RDAP, Email Verify, Dork Builder, Kredibel, Multi-Alias
+// =============================================
+
+// 8. RDAP Domain Lookup — pemilik, registrar, tanggal (gratis resmi)
+app.get('/api/tools/rdap', requireAuth, async (req, res) => {
+  const { domain } = req.query;
+  if (!domain || !/^[\w.-]+\.[a-z]{2,}$/i.test(domain)) return res.status(400).json({ error: 'Domain tidak valid' });
+  try {
+    const r = await axios.get(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+      timeout: 15000, maxRedirects: 5,
+      headers: { 'Accept': 'application/rdap+json', 'User-Agent': 'Mozilla/5.0' }
+    });
+    const d = r.data;
+    // Parse events
+    const events = {};
+    for (const ev of (d.events || [])) events[ev.eventAction] = ev.eventDate;
+    // Registrar
+    let registrar = '-';
+    for (const ent of (d.entities || [])) {
+      if ((ent.roles || []).includes('registrar')) {
+        const vcard = ent.vcardArray?.[1] || [];
+        const fn = vcard.find(x => x[0] === 'fn');
+        registrar = fn ? fn[3] : ent.handle || '-';
+        break;
+      }
+    }
+    res.json({
+      success: true,
+      data: {
+        domain: d.ldhName || domain,
+        registrar,
+        created: events.registration || '-',
+        updated: events['last changed'] || '-',
+        expires: events.expiration || '-',
+        status: (d.status || []).slice(0, 6),
+        nameservers: (d.nameservers || []).map(n => n.ldhName).slice(0, 4)
+      }
+    });
+  } catch (e) {
+    if (e.response?.status === 404) return res.status(404).json({ error: 'Domain tidak terdaftar / TLD tidak didukung RDAP' });
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// 9. Email Existence Verifier — cek Gravatar per kandidat
+const cryptoHash = require('crypto');
+app.post('/api/tools/email-verify', requireAuth, async (req, res) => {
+  const { emails } = req.body || {};
+  if (!Array.isArray(emails) || emails.length === 0) return res.status(400).json({ error: 'Daftar email kosong' });
+  if (emails.length > 10) return res.status(400).json({ error: 'Maksimal 10 email per verifikasi' });
+
+  const results = await Promise.allSettled(emails.map(async (email) => {
+    const hash = cryptoHash.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex');
+    try {
+      const r = await axios.get(`https://api.gravatar.com/v3/profiles/${hash}`,
+        { timeout: 8000, validateStatus: () => true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      return { email, gravatar: r.status === 200, display_name: r.data?.display_name || null };
+    } catch {
+      return { email, gravatar: false, display_name: null };
+    }
+  }));
+
+  res.json({
+    success: true,
+    data: results.map(r => r.value)
+  });
+});
+
+// 10. Dork Builder — generate & jalankan custom dork via Serper
+app.post('/api/tools/dork', requireAuth, async (req, res) => {
+  const { target, sites = [], filetypes = [], keywords = '' } = req.body || {};
+  if (!target) return res.status(400).json({ error: 'Target wajib diisi' });
+
+  const parts = [`"${target}"`];
+  if (sites.length) parts.push(`(${sites.map(s => `site:${s}`).join(' OR ')})`);
+  if (filetypes.length) parts.push(`(${filetypes.map(f => `ext:${f}`).join(' OR ')})`);
+  if (keywords) parts.push(keywords);
+  const query = parts.join(' ');
+
+  const serperKey = process.env.SERPER_API_KEY;
+  if (!serperKey || serperKey.includes('your_')) {
+    return res.json({ success: true, data: { query, results: [], message: 'SERPER_API_KEY belum diset — query hanya digenerate' } });
+  }
+  try {
+    const r = await axios.post('https://google.serper.dev/search',
+      { q: query, num: 10 },
+      { headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' }, timeout: 12000 });
+    res.json({
+      success: true,
+      data: {
+        query,
+        results: (r.data.organic || []).map(item => ({
+          title: item.title, link: item.link, snippet: (item.snippet || '').substring(0, 200)
+        }))
+      }
+    });
+  } catch (e) {
+    res.status(502).json({ error: 'Serper gagal: ' + e.message });
+  }
+});
+
+// 11. Kredibel check via Serper (skor penipuan)
+app.get('/api/tools/kredibel', requireAuth, async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: 'Query wajib diisi' });
+  const serperKey = process.env.SERPER_API_KEY;
+  if (!serperKey || serperKey.includes('your_')) return res.status(400).json({ error: 'Butuh SERPER_API_KEY' });
+  try {
+    const r = await axios.post('https://google.serper.dev/search',
+      { q: `"${q}" site:kredibel.com`, num: 5 },
+      { headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' }, timeout: 12000 });
+    const results = (r.data.organic || []).map(item => ({
+      title: item.title, link: item.link, snippet: (item.snippet || '').substring(0, 250)
+    }));
+    res.json({ success: true, data: { query: q, found: results.length, results } });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// 12. Multi-Alias scan — beberapa nama panggilan sekaligus
+app.post('/api/tools/multi-alias', requireAuth, async (req, res) => {
+  const { aliases } = req.body || {};
+  if (!Array.isArray(aliases) || aliases.length === 0) return res.status(400).json({ error: 'Daftar alias kosong' });
+  if (aliases.length > 5) return res.status(400).json({ error: 'Maksimal 5 alias per scan' });
+
+  const merged = [];
+  const seenUrls = new Set();
+  let totalChecked = 0;
+
+  for (const alias of aliases.slice()) {
+    const a = String(alias).trim().replace(/^@/, '');
+    if (!a) continue;
+    try {
+      const result = await checkUsername(a);
+      totalChecked += result.stats?.total_checked || 0;
+      for (const item of (result.rawData || [])) {
+        const url = item.details?.URL_Profile || item.context;
+        if (seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        merged.push({ ...item, alias: '@' + a });
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  audit(req, 'multi_alias', aliases.join(','));
+  res.json({
+    success: true,
+    data: {
+      aliases: aliases.map(a => '@' + String(a).replace(/^@/, '')),
+      total_probes: totalChecked,
+      unique_found: merged.length,
+      results: merged
+    }
+  });
 });
 
 // API: Jalankan Multi-Parameter Cross-Search (v2 — pakai semua sumber)

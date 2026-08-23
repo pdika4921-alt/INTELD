@@ -1270,6 +1270,69 @@
         <button class="btn-add" onclick="runEmailFinder()">Cari</button>
       </div>
       <div id="efResult" style="margin-top:12px;"></div>
+      <button class="btn-del" id="efVerifyBtn" onclick="verifyEmailCandidates()" style="display:none; margin-top:10px; background:rgba(0,255,65,0.12); border-color:var(--success); color:var(--success); padding:8px 16px;">✅ Verifikasi Kandidat (Gravatar)</button>
+    </div>
+
+    <!-- RDAP DOMAIN -->
+    <div class="watchlist-form">
+      <h3>🏛️ RDAP Domain — pemilik, registrar, tanggal terdaftar/kedaluwarsa</h3>
+      <div class="form-row">
+        <input type="text" id="rdapDomain" placeholder="Domain (contoh: tokopedia.com)" />
+        <button class="btn-add" onclick="runRdap()">Lookup</button>
+      </div>
+      <div id="rdapResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- DORK BUILDER -->
+    <div class="watchlist-form">
+      <h3>🧨 Dork Builder — rakit query dork custom lalu scan</h3>
+      <div class="form-row">
+        <input type="text" id="dbTarget" placeholder="Target (nama/email/nomor)" />
+        <input type="text" id="dbKeywords" placeholder="Kata kunci tambahan (opsional)" />
+      </div>
+      <div class="form-row" style="margin-top:8px;">
+        <select id="dbSites" multiple style="height:70px;">
+          <option value="facebook.com">Facebook</option>
+          <option value="instagram.com">Instagram</option>
+          <option value="tiktok.com">TikTok</option>
+          <option value="linkedin.com">LinkedIn</option>
+          <option value="pastebin.com">Pastebin</option>
+          <option value="trello.com">Trello</option>
+          <option value="github.com">GitHub</option>
+          <option value="scribd.com">Scribd</option>
+        </select>
+        <select id="dbFiles" multiple style="height:70px;">
+          <option value="sql">SQL dump</option>
+          <option value="xls / xlsx">Excel</option>
+          <option value="txt">TXT</option>
+          <option value="pdf">PDF</option>
+          <option value="csv">CSV</option>
+          <option value="log">LOG</option>
+        </select>
+        <button class="btn-add" onclick="runDork()">🧨 Eksekusi Dork</button>
+      </div>
+      <p style="font-size:0.7rem;color:var(--muted);margin-top:6px;">Ctrl+klik untuk pilih banyak. Tiap eksekusi pakai 1 credit Serper.</p>
+      <div id="dbResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- MULTI-ALIAS -->
+    <div class="watchlist-form">
+      <h3>👥 Multi-Alias Scan — beberapa nama panggilan sekaligus (maks 5)</h3>
+      <div class="form-row">
+        <input type="text" id="maInput" placeholder="alias1, alias2, alias3 (pisahkan koma)" />
+        <button class="btn-add" onclick="runMultiAlias()">Scan Semua</button>
+      </div>
+      <div id="maResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- KREDIBEL -->
+    <div class="watchlist-form">
+      <h3>🚨 Cek Kredibel — skor penipuan nomor/email/nama</h3>
+      <div class="form-row">
+        <input type="text" id="krInput" placeholder="Nomor telepon / email / nama" />
+        <button class="btn-add" onclick="runKredibel()">Cek</button>
+      </div>
+      <div id="krResult" style="margin-top:12px;"></div>
     </div>
 
     <!-- PASSWORD BREACH -->
@@ -2516,6 +2579,7 @@
   document.addEventListener('DOMContentLoaded', applyLang);
 
   // ---- TOOLS: EMAIL FINDER ----
+  let _efCandidates = [];
   async function runEmailFinder() {
     const name = document.getElementById('efName').value.trim();
     const domain = document.getElementById('efDomain').value.trim();
@@ -2525,6 +2589,8 @@
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
       const d = data.data;
+      _efCandidates = d.candidates.map(c => c.email);
+      document.getElementById('efVerifyBtn').style.display = 'inline-block';
       document.getElementById('efResult').innerHTML = `
         <div style="font-size:0.78rem; color:${d.mx_valid ? 'var(--success)' : 'var(--danger)'}; margin-bottom:8px;">
           ${d.mx_valid ? '✅ Domain aktif (mail server ada)' : '❌ Domain tidak punya mail server'} ${d.mx_records.length ? '· ' + d.mx_records.join(', ') : ''}
@@ -2809,6 +2875,145 @@
         </tr>`).join('');
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Backend tidak tersedia</td></tr>`;
+    }
+  }
+
+  // ---- TOOLS: EMAIL VERIFIER ----
+  async function verifyEmailCandidates() {
+    if (_efCandidates.length === 0) return alert('Generate kandidat dulu!');
+    const btn = document.getElementById('efVerifyBtn');
+    btn.disabled = true; btn.textContent = '⏳ Memverifikasi...';
+    try {
+      const res = await authFetch('/api/tools/email-verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({emails: _efCandidates}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      for (const v of data.data) {
+        const row = [...document.querySelectorAll('#efResult .raw-key-value')].find(el => el.textContent.includes(v.email));
+        if (row) {
+          const valDiv = row.querySelector('.v');
+          if (v.gravatar) {
+            valDiv.innerHTML = `${v.email} <span style="color:var(--success);">✅ GRAVATAR AKTIF${v.display_name ? ' — ' + v.display_name : ''} (sinyal kuat!)</span>`;
+          } else {
+            valDiv.innerHTML = `${v.email} <span style="color:var(--muted);">— tanpa jejak</span>`;
+          }
+        }
+      }
+      btn.textContent = '✅ Terverifikasi';
+    } catch (e) { alert('Verifikasi gagal: ' + e.message); }
+  }
+
+  // ---- TOOLS: RDAP ----
+  async function runRdap() {
+    const domain = document.getElementById('rdapDomain').value.trim();
+    if (!domain) return alert('Masukkan domain!');
+    const box = document.getElementById('rdapResult');
+    box.innerHTML = '<div class="empty-result">⏳ Menghubungi registry...</div>';
+    try {
+      const res = await authFetch('/api/tools/rdap?domain=' + encodeURIComponent(domain));
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      const fmt = s => s && s !== '-' ? new Date(s).toLocaleDateString('id-ID', {year:'numeric',month:'long',day:'numeric'}) : '-';
+      box.innerHTML = `
+        <div class="info-grid">
+          <div class="info-item"><div class="key">Domain</div><div class="val" style="font-family:var(--mono)">${d.domain}</div></div>
+          <div class="info-item"><div class="key">Registrar</div><div class="val" style="color:var(--accent)">${d.registrar}</div></div>
+          <div class="info-item"><div class="key">Terdaftar</div><div class="val">${fmt(d.created)}</div></div>
+          <div class="info-item"><div class="key">Kedaluwarsa</div><div class="val">${fmt(d.expires)}</div></div>
+          <div class="info-item"><div class="key">Terakhir Diubah</div><div class="val">${fmt(d.updated)}</div></div>
+          <div class="info-item"><div class="key">Nameserver</div><div class="val" style="font-size:0.75rem;">${d.nameservers.join(', ') || '-'}</div></div>
+          ${(d.status || []).length ? `<div class="info-item" style="grid-column:1/-1;"><div class="key">Status</div><div class="data-tags">${d.status.map(s => `<span class="data-tag">${s}</span>`).join('')}</div></div>` : ''}
+        </div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="error-box">${e.message}</div>`;
+    }
+  }
+
+  // ---- TOOLS: DORK BUILDER ----
+  async function runDork() {
+    const target = document.getElementById('dbTarget').value.trim();
+    if (!target) return alert('Masukkan target!');
+    const sites = [...document.getElementById('dbSites').selectedOptions].map(o => o.value);
+    const filetypes = [...document.getElementById('dbFiles').selectedOptions].map(o => o.value);
+    const keywords = document.getElementById('dbKeywords').value.trim();
+    const box = document.getElementById('dbResult');
+    box.innerHTML = '<div class="empty-result">⏳ Mengeksekusi via Serper...</div>';
+    try {
+      const res = await authFetch('/api/tools/dork', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ target, sites, filetypes, keywords }) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      let html = `<p style="font-family:var(--mono);font-size:0.72rem;color:var(--accent);margin-bottom:10px;">QUERY: ${d.query}</p>`;
+      if (d.message) html += `<div class="empty-result">${d.message}</div>`;
+      else if (d.results.length === 0) html += '<div class="empty-result">Tidak ada hasil</div>';
+      else html += d.results.map(r => `
+        <div class="breach-item">
+          <div class="breach-name">🌐 <a href="${r.link}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${r.title}</a></div>
+          <div class="breach-date">${r.snippet}</div>
+        </div>`).join('');
+      box.innerHTML = html;
+    } catch (e) {
+      box.innerHTML = `<div class="error-box">${e.message}</div>`;
+    }
+  }
+
+  // ---- TOOLS: MULTI-ALIAS ----
+  async function runMultiAlias() {
+    const raw = document.getElementById('maInput').value.trim();
+    if (!raw) return alert('Masukkan alias!');
+    const aliases = raw.split(',').map(a => a.trim().replace(/^@/, '')).filter(Boolean).slice(0, 5);
+    if (aliases.length === 0) return alert('Tidak ada alias valid!');
+    const box = document.getElementById('maResult');
+    box.innerHTML = `<div class="empty-result">⏳ Scanning ${aliases.length} alias (±15 detik per alias)...</div>`;
+    try {
+      const res = await authFetch('/api/tools/multi-alias', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({aliases}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      let html = `<p style="color:var(--warning);font-size:0.85rem;margin-bottom:10px;">🎯 ${d.unique_found} akun unik dari ${d.total_probes} probe (${d.aliases.join(', ')})</p>`;
+      if (d.results.length > 0) {
+        html += `<table class="raw-data-table"><thead><tr><th>Alias</th><th>Platform</th><th>Bukti</th></tr></thead><tbody>`;
+        html += d.results.map(r2 => `
+          <tr>
+            <td style="font-family:var(--mono);color:var(--accent);">${r2.alias}</td>
+            <td>${String(r2.context).replace(/— profil ditemukan/, '')}</td>
+            <td>${r2.details?.URL_Profile ? `<a href="${r2.details.URL_Profile}" target="_blank" rel="noopener" style="color:var(--accent);font-size:0.75rem;">buka ↗</a>` : '-'}</td>
+          </tr>`).join('');
+        html += '</tbody></table>';
+      } else {
+        html += '<div class="empty-result">Tidak ada akun ditemukan untuk semua alias</div>';
+      }
+      box.innerHTML = html;
+    } catch (e) {
+      box.innerHTML = `<div class="error-box">${e.message}</div>`;
+    }
+  }
+
+  // ---- TOOLS: KREDIBEL ----
+  async function runKredibel() {
+    const q = document.getElementById('krInput').value.trim();
+    if (!q) return alert('Masukkan nomor/email/nama!');
+    const box = document.getElementById('krResult');
+    box.innerHTML = '<div class="empty-result">⏳ Mencari di kredibel.com...</div>';
+    try {
+      const res = await authFetch('/api/tools/kredibel?q=' + encodeURIComponent(q));
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      if (d.found === 0) {
+        box.innerHTML = '<div class="empty-result">✅ Tidak ada laporan penipuan di kredibel.com untuk target ini</div>';
+      } else {
+        box.innerHTML = `
+          <p style="color:var(--danger);font-size:0.85rem;margin-bottom:10px;">🚨 ${d.found} laporan terkait ditemukan di Kredibel:</p>
+          ${d.results.map(r3 => `
+            <div class="breach-item">
+              <div class="breach-name">🚨 <a href="${r3.link}" target="_blank" rel="noopener" style="color:var(--danger);text-decoration:none;">${r3.title}</a></div>
+              <div class="breach-date">${r3.snippet}</div>
+            </div>`).join('')}`;
+      }
+    } catch (e) {
+      box.innerHTML = `<div class="error-box">${e.message}</div>`;
     }
   }
 
