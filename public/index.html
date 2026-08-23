@@ -1306,22 +1306,6 @@
       <div id="cmpResult" style="margin-top:12px;"></div>
     </div>
 
-    <!-- SECURITY: 2FA -->
-    <div class="watchlist-form">
-      <h3>🔐 Two-Factor Authentication (2FA)</h3>
-      <div id="tfaStatus" style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;">Memuat status 2FA...</div>
-      <div class="form-row">
-        <button class="btn-add" onclick="setup2fa()">🔐 Setup / Regenerate QR</button>
-        <input type="text" id="tfaEnableCode" placeholder="Kode dari authenticator (6 digit)" maxlength="6" />
-        <button class="btn-add" onclick="enable2fa()">Aktifkan</button>
-        <button class="btn-del" onclick="disable2fa()" style="border-color:var(--danger);color:var(--danger);">Nonaktifkan</button>
-      </div>
-      <div id="tfaQrBox" style="display:none;margin-top:14px;text-align:center;">
-        <img id="tfaQr" alt="QR 2FA" style="background:#fff;padding:8px;border-radius:10px;width:180px;height:180px;" />
-        <p style="font-size:0.72rem;color:var(--muted);margin-top:8px;">Scan dengan Google Authenticator/Authy lalu masukkan kode → Aktifkan.<br>Secret manual: <code id="tfaSecretText" style="color:var(--accent);"></code></p>
-      </div>
-    </div>
-
     <!-- AI SUMMARY CONFIG NOTE -->
     <div style="padding:12px 14px;background:rgba(100,116,139,0.08);border:1px solid rgba(100,116,139,0.3);border-radius:8px;font-size:0.75rem;color:var(--muted);">
       💡 AI Summary & tombol Share muncul otomatis di hasil pencarian. AI butuh <code>OPENAI_API_KEY</code> di .env.
@@ -1379,7 +1363,7 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>#</th><th>Username</th><th>Role</th><th>2FA</th><th>Dibuat</th><th></th></tr>
+          <tr><th>#</th><th>Username</th><th>Role</th><th>Dibuat</th><th></th></tr>
         </thead>
         <tbody id="usersTableBody">
           <tr><td colspan="6" style="text-align:center; color:var(--muted); padding:24px;">Memuat...</td></tr>
@@ -1544,7 +1528,7 @@
     if (name === 'history') loadHistory();
     if (name === 'watchlist') loadWatchlist();
     if (name === 'stats') loadStats();
-    if (name === 'users') { loadUsers(); loadAudit(); load2faStatus(); loadCompareOptions(); }
+    if (name === 'users') { loadUsers(); loadAudit(); loadCompareOptions(); }
   }
 
   // ---- FUNGSI BUKA / TUTUP TABEL EKSPANSI ----
@@ -2791,54 +2775,6 @@
     ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#00ff41'; ctx.font = 'bold 10px monospace';
     ctx.fillText('TARGET', cx, cy - 14);
-  }
-
-  // ---- 2FA ----
-  async function load2faStatus() {
-    try {
-      const users = (await (await authFetch('/api/users')).json()).data || [];
-      const me = users.find(u => u.username === sessionStorage.getItem('bi_user'));
-      document.getElementById('tfaStatus').innerHTML = me?.totp_enabled
-        ? '✅ <span style="color:var(--success)">2FA AKTIF</span> untuk akun kamu — login akan diminta kode authenticator'
-        : '⚠️ 2FA <strong>belum aktif</strong> — aktifkan untuk proteksi maksimal akun admin';
-    } catch {
-      // non-admin tidak bisa lihat /api/users; cek via status lain
-      document.getElementById('tfaStatus').textContent = 'Status 2FA tersedia hanya untuk admin';
-    }
-  }
-
-  async function setup2fa() {
-    try {
-      const res = await authFetch('/api/2fa/setup', { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      document.getElementById('tfaQrBox').style.display = 'block';
-      document.getElementById('tfaQr').src = data.data.qr;
-      document.getElementById('tfaSecretText').textContent = data.data.secret;
-    } catch (e) { alert('Setup 2FA gagal: ' + e.message); }
-  }
-
-  async function enable2fa() {
-    const code = document.getElementById('tfaEnableCode').value.trim();
-    if (!code) return alert('Masukkan kode dari authenticator!');
-    try {
-      const res = await authFetch('/api/2fa/enable', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code}) });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      alert('✅ 2FA AKTIF! Login berikutnya akan diminta kode authenticator.');
-      load2faStatus();
-    } catch (e) { alert('Gagal aktivasi 2FA: ' + e.message); }
-  }
-
-  async function disable2fa() {
-    if (!confirm('Nonaktifkan 2FA?')) return;
-    try {
-      const res = await authFetch('/api/2fa/disable', { method:'POST' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      alert('2FA dinonaktifkan');
-      load2faStatus();
-    } catch (e) { alert('Gagal: ' + e.message); }
   }
 
   // ---- AUDIT LOG ----

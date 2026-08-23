@@ -127,10 +127,6 @@ RESTRICTED AREA — AUTHORIZED PERSONNEL ONLY</div>
     <input type="text" id="username" autocomplete="username" autofocus />
     <label>PASSWORD</label>
     <input type="password" id="password" autocomplete="current-password" />
-    <div id="totpRow" style="display:none;">
-      <label>KODE AUTHENTICATOR (2FA)</label>
-      <input type="text" id="totpCode" inputmode="numeric" maxlength="6" placeholder="______" />
-    </div>
 
     <button type="submit" id="btnLogin">&gt; MASUK_</button>
     <div class="error" id="errorBox">⛔ AKSES DITOLAK — KREDENSIAL SALAH</div>
@@ -145,39 +141,18 @@ RESTRICTED AREA — AUTHORIZED PERSONNEL ONLY</div>
     btn.textContent = '> MEMVERIFIKASI...';
     errBox.classList.remove('show');
     try {
-      const totpVisible = document.getElementById('totpRow').style.display === 'block';
-      const code = document.getElementById('totpCode') ? document.getElementById('totpCode').value.trim() : '';
-      const endpoint = (totpVisible && code) ? '/api/login/2fa' : '/api/login';
-      const payload = (totpVisible && code)
-        ? { code }
-        : { username: document.getElementById('username').value, password: document.getElementById('password').value };
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value
+        })
       });
-      const j = await res.json().catch(() => ({}));
-      if (j.need_2fa) {
-        // tampilkan kolom 2FA, kirim ulang dengan kode
-        document.getElementById('totpRow').style.display = 'block';
-        document.getElementById('totpCode').focus();
-        errBox.textContent = '🔐 KODE AUTHENTICATOR DIPERLUKAN';
-        errBox.style.color = 'var(--accent)';
-        errBox.style.borderColor = 'rgba(0,255,65,0.4)';
-        errBox.style.background = 'rgba(0,255,65,0.06)';
-        errBox.classList.add('show');
-        btn.disabled = false;
-        btn.textContent = '> VERIFIKASI_';
-        return;
-      }
-      if (res.ok && !j.need_2fa) {
+      if (res.ok) {
+        const j = await res.json();
         sessionStorage.setItem('bi_role', j.role || 'user');
         window.location.href = '/';
-      } else if (res.status === 401 && j.error && j.error.includes('2FA')) {
-        errBox.textContent = '⛔ ' + j.error;
-        errBox.classList.add('show');
-        btn.disabled = false;
-        btn.textContent = '> MASUK_';
       } else {
         throw new Error();
       }

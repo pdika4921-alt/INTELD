@@ -122,11 +122,6 @@ app.post('/api/login', loginLimiter, (req, res) => {
   if (user) {
     const hash = hashPassword(password, user.salt);
     if (crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(user.password_hash))) {
-      // 2FA aktif? minta token dulu
-      if (user.totp_enabled && user.totp_secret) {
-        req.session.pending2fa = user.id;
-        return res.json({ success: false, need_2fa: true, message: 'Masukkan kode authenticator' });
-      }
       req.session.authenticated = true;
       req.session.username = user.username;
       req.session.role = user.role;
@@ -150,57 +145,6 @@ app.post('/api/login', loginLimiter, (req, res) => {
   audit(req, 'login_failed', `user=${username}`);
   // Delay kecil anti brute-force
   setTimeout(() => res.status(401).json({ success: false, error: 'Username atau password salah' }), 600);
-});
-
-// Verifikasi kode 2FA saat login
-app.post('/api/login/2fa', loginLimiter, (req, res) => {
-  const { code } = req.body || {};
-  const userId = req.session?.pending2fa;
-  if (!userId || !code) return res.status(401).json({ success: false, error: 'Sesi 2FA tidak valid' });
-  const user = db.raw.prepare(`SELECT * FROM users WHERE id = ?`).get(userId);
-  if (!user || !user.totp_secret) return res.status(401).json({ success: false, error: '2FA tidak aktif' });
-  const { authenticator } = require('otplib');
-  try {
-    if (!authenticator.check(String(code).trim(), user.totp_secret)) throw new Error('kode salah');
-    req.session.authenticated = true;
-    req.session.username = user.username;
-    req.session.role = user.role;
-    delete req.session.pending2fa;
-    audit(req, 'login_2fa', `user=${user.username}`);
-    res.json({ success: true, role: user.role, username: user.username });
-  } catch {
-    setTimeout(() => res.status(401).json({ success: false, error: 'Kode 2FA salah' }), 500);
-  }
-});
-
-// ===== 2FA Setup (harus sudah login) =====
-app.post('/api/2fa/setup', requireAuth, async (req, res) => {
-  const { authenticator } = require('otplib');
-  const QRCode = require('qrcode');
-  const secret = authenticator.generateSecret();
-  db.raw.prepare(`UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE username = ?`).run(secret, req.session.username);
-  const otpauth = authenticator.keyuri(req.session.username, 'BREACH INTEL', secret);
-  const qrDataUrl = await QRCode.toDataURL(otpauth);
-  res.json({ success: true, data: { secret, otpauth, qr: qrDataUrl } });
-});
-
-app.post('/api/2fa/enable', requireAuth, (req, res) => {
-  const { code } = req.body || {};
-  const user = db.raw.prepare(`SELECT * FROM users WHERE username = ?`).get(req.session.username);
-  if (!user?.totp_secret) return res.status(400).json({ error: 'Jalankan setup dulu' });
-  const { authenticator } = require('otplib');
-  if (!authenticator.check(String(code || '').trim(), user.totp_secret)) {
-    return res.status(401).json({ error: 'Kode salah — coba lagi' });
-  }
-  db.raw.prepare(`UPDATE users SET totp_enabled = 1 WHERE username = ?`).run(req.session.username);
-  audit(req, '2fa_enabled', req.session.username);
-  res.json({ success: true });
-});
-
-app.post('/api/2fa/disable', requireAuth, (req, res) => {
-  db.raw.prepare(`UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE username = ?`).run(req.session.username);
-  audit(req, '2fa_disabled', req.session.username);
-  res.json({ success: true });
 });
 
 // Audit log (admin)
