@@ -1,0 +1,9 @@
+{
+  "appId": "com.pdika.breachintel",
+  "appName": "BreachIntel",
+  "webDir": "www",
+  "server": {
+    "url": "https://mediumpurple-goat-265646.hostingersite.com/",
+    "cleartext": false
+  }
+}

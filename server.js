@@ -31,6 +31,9 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy (Render/Hostinger/Nginx di depan) agar req.https terdeteksi
+app.set('trust proxy', 1);
+
 // =============================================
 // AUTENTIKASI SEDERHANA (credentials dari .env)
 // =============================================
@@ -60,16 +63,26 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session untuk login
+// Session untuk login (cookie secure otomatis saat via HTTPS)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'breach-intel-secret-change-me',
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } // 24 jam
+  cookie: { httpOnly: true, secure: 'auto', sameSite: 'lax', maxAge: 24 * 60 * 60 * 1000 }
 }));
 
+// Anti brute-force login: maks 5 percobaan gagal / 15 menit / IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  message: { success: false, error: 'Terlalu banyak percobaan login gagal. Coba lagi dalam 15 menit.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 // Route login/logout (bebas auth)
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   if (!ADMIN_PASS) return res.json({ success: true, message: 'Mode terbuka (password belum diset)' });
   const { username, password } = req.body || {};
   if (username === ADMIN_USER && password === ADMIN_PASS) {
@@ -105,6 +118,7 @@ const searchLimiter = rateLimit({
 app.use('/api/search', searchLimiter);
 app.use('/api/cross-search', searchLimiter);
 app.use('/api/phone-lookup', searchLimiter);
+app.use('/api/batch', searchLimiter);
 
 // =============================================
 // ROUTES
@@ -528,7 +542,64 @@ app.get('/api/phone-lookup', async (req, res) => {
   }
 });
 
-// API: Jalankan Multi-Parameter Cross-Search
+// API: Batch Lookup (scan massal, maks 25 target per request)
+app.post('/api/batch', async (req, res) => {
+  const { items } = req.body; // [{ q, type }]
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Daftar target kosong' });
+  }
+  if (items.length > 25) {
+    return res.status(400).json({ error: 'Maksimal 25 target per batch' });
+  }
+
+  const results = [];
+  for (const item of items) {
+    const q = String(item.q || '').trim();
+    let type = String(item.type || 'email').toLowerCase();
+    const validTypes = ['email', 'phone', 'domain', 'name', 'location', 'ttl'];
+    if (!validTypes.includes(type)) {
+      // auto-detect
+      type = /^\+?\d[\d\s\-()]{6,}$/.test(q) ? 'phone'
+        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q) ? 'email'
+        : /^[\w-]+\.[a-z]{2,}$/i.test(q) ? 'domain' : 'name';
+    }
+    if (!q) continue;
+    try {
+      const r = await runIntelligence(q, type);
+      results.push({
+        query: q,
+        type,
+        status: 'ok',
+        total_breaches: r.summary?.total_breaches ?? 0,
+        risk_level: r.summary?.risk_level ?? 'SAFE',
+        data_classes: (r.summary?.data_classes || []).slice(0, 8),
+        sources_live: (r.sources || []).filter(s => s.status === 'success').map(s => s.source)
+      });
+      // Simpan history ringkas
+      db.run(
+        `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level) VALUES (?, ?, ?, ?, ?)`,
+        [q, 'batch-' + type, JSON.stringify(r.summary), r.summary?.total_breaches ?? 0, r.summary?.risk_level ?? 'SAFE'],
+        () => {}
+      );
+    } catch (e) {
+      results.push({ query: q, type, status: 'error', error: e.message });
+    }
+    await new Promise(r2 => setTimeout(r2, 300)); // jeda antar target
+  }
+
+  res.json({
+    success: true,
+    data: {
+      processed: results.length,
+      breached: results.filter(r => (r.total_breaches || 0) > 0).length,
+      safe: results.filter(r => r.risk_level === 'SAFE').length,
+      errors: results.filter(r => r.status === 'error').length,
+      results
+    }
+  });
+});
+
+// API: Jalankan Multi-Parameter Cross-Search (v2 — pakai semua sumber)
 app.post('/api/cross-search', async (req, res) => {
   const { email, phone, name, location } = req.body;
 
@@ -537,67 +608,75 @@ app.post('/api/cross-search', async (req, res) => {
   }
 
   try {
-    let combinedSources = [];
-    let totalBreaches = 0;
-    let allDataClasses = [];
+    const tasks = [];
+    if (email) tasks.push(runIntelligence(email, 'email'));
+    if (phone) tasks.push(runIntelligence(phone, 'phone'));
+    if (name) tasks.push(runIntelligence(name, 'name'));
+    if (location && location !== name) tasks.push(runIntelligence(location, 'name'));
 
-    // 1. Jika Email diisi, cek via XposedOrNot (jika online) atau simulasi struktur email
-    if (email) {
+    // Korelasi gabungan via dork Serper (nama+lokasi+telepon dalam 1 query)
+    let correlationSource = null;
+    const serperKey = process.env.SERPER_API_KEY;
+    const corrParts = [name, location].filter(Boolean);
+    if (corrParts.length >= 2 && serperKey && !serperKey.includes('your_')) {
       try {
-        const xonRes = await fetch(`https://api.xposedornot.com/v1/check-email/${encodeURIComponent(email)}`);
-        const xonData = await xonRes.json();
-        if (xonData.status === 'success' && xonData.breaches) {
-          const flatBreaches = xonData.breaches.flat();
-          totalBreaches += flatBreaches.length;
-          combinedSources.push({
-            source: 'XposedOrNot (Email Match)',
+        const queryParts = corrParts.join(' AND ');
+        const serperRes = await axios.post('https://google.serper.dev/search',
+          { q: `"${queryParts}" (site:pastebin.com OR ext:txt OR ext:sql OR site:facebook.com OR site:linkedin.com)`, num: 8 },
+          { headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' }, timeout: 12000 }
+        );
+        const items = (serperRes.data.organic || []);
+        if (items.length > 0) {
+          correlationSource = {
+            source: 'Korelasi Silang Serper',
             status: 'success',
-            breaches: flatBreaches.map(b => ({ Name: b, BreachDate: 'Verified Leak', DataClasses: ['Email addresses', 'Passwords'] }))
-          });
-        }
-      } catch (e) { console.warn("Xposed check skipped"); }
-    }
-
-    // 2. Jika Nama, Lokasi, atau Phone diisi, jalankan OSINT Dorking via Serper.dev
-    const serperApiKey = process.env.SERPER_API_KEY;
-    if ((name || location || phone) && serperApiKey && !serperApiKey.includes('your_serper')) {
-      // Gabungkan parameter menjadi satu kueri investigasi gabungan
-      const queryParts = [name, location, phone].filter(Boolean).join(' AND ');
-      const dorkQuery = `"${queryParts}" (site:pastebin.com OR site:trello.com OR ext:txt OR ext:sql)`;
-
-      try {
-        const serperRes = await fetch('https://google.serper.dev/search', {
-          method: 'POST',
-          headers: { 'X-API-KEY': serperApiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: dorkQuery })
-        });
-        const serperData = await serperRes.json();
-
-        if (serperData.organic && serperData.organic.length > 0) {
-          totalBreaches += serperData.organic.length;
-          combinedSources.push({
-            source: 'Serper Cross-OSINT Dorking',
-            status: 'success',
-            rawData: serperData.organic.map(item => ({
+            rawData: items.map(item => ({
               context: item.title,
               date: 'Real-time Dork',
               tags: ['Cross-Reference', 'Public Dump'],
               details: {
-                "Parameter_Dicari": queryParts,
-                "URL_Sumber": item.link,
-                "Korelasi_Teks": item.snippet
+                'Parameter_Dicari': queryParts,
+                'URL_Sumber': item.link,
+                'Korelasi_Teks': (item.snippet || '').substring(0, 200)
               }
             }))
-          });
+          };
         }
-      } catch (err) {
-        console.error("Serper API error:", err);
-      }
+      } catch (err) { console.warn('Serper correlation gagal:', err.message); }
     }
 
-    // Tentukan tingkat risiko berdasarkan total temuan korelasi
+    // Gabungkan hasil semua task
+    const settled = await Promise.allSettled(tasks);
+    let combinedSources = [];
+    let totalBreaches = 0;
+    let allDataClasses = [];
+
+    for (const s of settled) {
+      if (s.status !== 'fulfilled' || !s.value) continue;
+      for (const src of (s.value.sources || [])) {
+        if (!src || !src.source) continue;
+        // dedupe berdasar nama sumber
+        const existing = combinedSources.find(x => x.source === src.source);
+        if (existing) continue;
+        combinedSources.push(src);
+        totalBreaches = Math.max(totalBreaches,
+          src.breaches?.length || src.found_count || src.found || 0,
+          src.rawData?.length || 0
+        );
+        src.breaches?.forEach(b => allDataClasses.push(...(b.DataClasses || [])));
+      }
+      allDataClasses.push(...(s.value.summary?.data_classes || []));
+    }
+
+    if (correlationSource) {
+      combinedSources.push(correlationSource);
+      totalBreaches += correlationSource.rawData.length;
+      allDataClasses.push('Public Records');
+    }
+
     let riskLevel = 'SAFE';
-    if (totalBreaches >= 5) riskLevel = 'HIGH';
+    if (totalBreaches >= 10) riskLevel = 'CRITICAL';
+    else if (totalBreaches >= 5) riskLevel = 'HIGH';
     else if (totalBreaches >= 2) riskLevel = 'MEDIUM';
     else if (totalBreaches === 1) riskLevel = 'LOW';
 
@@ -616,11 +695,18 @@ app.post('/api/cross-search', async (req, res) => {
           date: new Date().toISOString().split('T')[0],
           tags: ['Clean', 'No Match'],
           details: {
-            "Status": "Tidak ditemukan korelasi data terekspos untuk parameter yang dimasukkan."
+            'Status': 'Tidak ditemukan korelasi data terekspos untuk parameter yang dimasukkan.'
           }
         }]
       }]
     };
+
+    // Simpan history
+    db.run(
+      `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level) VALUES (?, ?, ?, ?, ?)`,
+      [results.query, 'cross', JSON.stringify(results.summary), totalBreaches, riskLevel],
+      () => {}
+    );
 
     res.json({ success: true, data: results });
 

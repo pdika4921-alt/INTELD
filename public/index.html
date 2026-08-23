@@ -1032,6 +1032,7 @@
   <button class="tab-btn active" onclick="switchTab('search', this)">🔎 Pencarian</button>
   <button class="tab-btn" onclick="switchTab('history', this)">📋 Riwayat</button>
   <button class="tab-btn" onclick="switchTab('watchlist', this)">👁️ Watchlist</button>
+  <button class="tab-btn" onclick="switchTab('batch', this)">📦 Batch</button>
   <button class="tab-btn" onclick="switchTab('stats', this)">📊 Statistik</button>
 </div>
 
@@ -1139,6 +1140,35 @@
           <tr><td colspan="5" style="text-align:center; color: var(--muted); padding: 24px;">Memuat watchlist...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- TAB: BATCH -->
+  <div id="tab-batch" class="tab-content">
+    <div class="watchlist-form">
+      <h3>📦 Batch Lookup — Scan Massal (maks 25 target)</h3>
+      <p style="font-size:0.78rem; color:var(--muted); margin-bottom:10px;">Tempel daftar target, satu per baris. Tipe dideteksi otomatis (email/telepon/domain/nama).</p>
+      <textarea id="batchInput" rows="7" style="width:100%; padding:12px; background:rgba(0,0,0,0.45); border:1px solid var(--border); border-radius:8px; color:var(--accent); font-family:var(--mono); font-size:0.85rem; outline:none; resize:vertical;" placeholder="nama@email.com&#10;08123456789&#10;budi santoso&#10;example.com"></textarea>
+      <button class="btn-search" id="batchBtn" onclick="runBatch()" style="width:100%; margin-top:12px;">>> SCAN SEMUA</button>
+    </div>
+    <div id="batchSummary" style="display:none; margin-bottom:16px;" class="stats-grid"></div>
+    <p class="section-title">Hasil Batch</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Target</th>
+            <th>Tipe</th>
+            <th>Breach</th>
+            <th>Risiko</th>
+            <th>Sumber Live</th>
+          </tr>
+        </thead>
+        <tbody id="batchTableBody">
+          <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Belum ada hasil batch</td></tr>
+        </tbody>
+      </table>
+      <button class="btn-del" id="batchExportBtn" onclick="exportBatchCSV()" style="display:none; margin-top:14px; background:rgba(0,255,65,0.12); border-color:var(--success); color:var(--success); padding:8px 18px;">⬇️ Export CSV</button>
     </div>
   </div>
 
@@ -1932,6 +1962,98 @@
     } finally {
       btn.disabled = false;
       btn.textContent = '🔄 Cek Semua Sekarang';
+    }
+  }
+
+  // ---- BATCH LOOKUP ----
+  let _batchResults = [];
+  async function runBatch() {
+    const raw = document.getElementById('batchInput').value.trim();
+    if (!raw) return alert('Tempel daftar target dulu!');
+    const items = raw.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 25);
+    if (items.length === 0) return alert('Tidak ada target valid!');
+
+    const btn = document.getElementById('batchBtn');
+    btn.disabled = true;
+    btn.textContent = `⏳ Memindai ${items.length} target... (bisa 1-2 menit)`;
+
+    try {
+      const res = await authFetch('/api/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: items.map(q => ({ q })) })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Gagal');
+
+      _batchResults = data.data.results;
+      renderBatch(data.data);
+    } catch (e) {
+      alert('Batch gagal: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '>> SCAN SEMUA';
+    }
+  }
+
+  function renderBatch(d) {
+    const sum = document.getElementById('batchSummary');
+    sum.style.display = 'grid';
+    sum.innerHTML = `
+      <div class="stat-card"><div class="stat-number" style="color:var(--accent)">${d.processed}</div><div class="stat-label">Diproses</div></div>
+      <div class="stat-card"><div class="stat-number" style="color:var(--danger)">${d.breached}</div><div class="stat-label">Kena Breach</div></div>
+      <div class="stat-card"><div class="stat-number" style="color:var(--success)">${d.safe}</div><div class="stat-label">Aman</div></div>
+      <div class="stat-card"><div class="stat-number" style="color:var(--warning)">${d.errors}</div><div class="stat-label">Error</div></div>
+    `;
+
+    const tbody = document.getElementById('batchTableBody');
+    if (_batchResults.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Tidak ada hasil</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _batchResults.map(r => `
+      <tr>
+        <td style="font-family:var(--mono); font-size:0.85rem;">${r.query}</td>
+        <td><span class="badge ${r.type}">${r.type}</span></td>
+        <td style="font-family:var(--mono); color:${(r.total_breaches||0) > 0 ? 'var(--danger)' : 'var(--success)'};">${r.status === 'error' ? 'ERR' : (r.total_breaches || 0)}</td>
+        <td><span class="risk-pill ${r.risk_level || '-'}">${r.risk_level || '-'}</span></td>
+        <td style="font-size:0.75rem; color:var(--muted);">${(r.sources_live || []).length} sumber${(r.data_classes||[]).length ? '<br>' + r.data_classes.slice(0,3).join(', ') : ''}</td>
+      </tr>
+    `).join('');
+    document.getElementById('batchExportBtn').style.display = 'inline-block';
+  }
+
+  function exportBatchCSV() {
+    if (_batchResults.length === 0) return;
+    const rows = [['Target','Tipe','Breach','Risiko','Data Bocor','Sumber Live']];
+    _batchResults.forEach(r => rows.push([
+      r.query, r.type, r.total_breaches || 0, r.risk_level || '-',
+      (r.data_classes || []).join('; '), (r.sources_live || []).join('; ')
+    ]));
+    const csv = rows.map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `batch-scan-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ---- STATS ----
+  async function loadStats() {
+    try {
+      const res = await authFetch('/api/stats');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const s = data.data;
+      document.getElementById('stat-total').textContent = s.total_searches || 0;
+      document.getElementById('stat-breaches').textContent = s.total_breaches_found || 0;
+      document.getElementById('stat-critical').textContent = s.critical_count || 0;
+      document.getElementById('stat-safe').textContent = s.safe_count || 0;
+    } catch (e) {
+      ['stat-total','stat-breaches','stat-critical','stat-safe'].forEach(id => {
+        document.getElementById(id).textContent = '-';
+      });
     }
   }
 
