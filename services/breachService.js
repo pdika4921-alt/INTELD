@@ -586,7 +586,20 @@ async function checkUsername(username) {
       { name: '🐦 X/Twitter', url: `https://x.com/${username}` },
       { name: '📘 Facebook', url: `https://www.facebook.com/${username}` },
       { name: '👻 Snapchat', url: `https://www.snapchat.com/add/${username}` },
-      { name: '🎵 TikTok Studio', url: `https://www.tiktok.com/@${username}` }
+      { name: '🎵 TikTok Studio', url: `https://www.tiktok.com/@${username}` },
+      { name: '📌 Pinterest', url: `https://www.pinterest.com/${username}/` },
+      { name: '🟣 Twitch', url: `https://m.twitch.tv/${username}` },
+      { name: '🎵 Spotify', url: `https://open.spotify.com/user/${username}` },
+      { name: '🐍 PyPI', url: `https://pypi.org/user/${username}/` },
+      { name: '🐱 Kaggle', url: `https://www.kaggle.com/${username}` },
+      { name: '⌨️ Replit', url: `https://replit.com/@${username}` },
+      { name: '▶️ Odysee', url: `https://odysee.com/@${username}` },
+      { name: '🧵 Threads', url: `https://www.threads.net/@${username}` },
+      { name: '📄 Tumblr', url: `https://${username}.tumblr.com` },
+      { name: '☕ Ko-fi', url: `https://ko-fi.com/${username}` },
+      { name: '🎮 PSNProfiles', url: `https://psnprofiles.com/${username}` },
+      { name: '💬 Hacker News', url: `https://news.ycombinator.com/user?id=${username}` },
+      { name: '🎬 Vimeo', url: `https://vimeo.com/${username}` }
     ]
   };
 }
