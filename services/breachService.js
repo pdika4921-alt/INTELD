@@ -497,8 +497,9 @@ async function checkUsername(username) {
       check: r => r.status === 200 && !String(r.data).includes('tgme_page_not_found') },
     { name: 'Steam', url: `https://steamcommunity.com/id/${u}`,
       check: r => r.status === 200 && !String(r.data).includes('The specified profile could not be found') },
-    { name: 'TikTok', url: `https://www.tiktok.com/@${u}`,
-      check: r => r.status === 200 && String(r.data).includes('"uniqueId"') },
+    { name: 'TikTok', url: `https://www.tiktok.com/oembed?url=${encodeURIComponent('https://www.tiktok.com/@' + username)}`,
+      check: r => r.status === 200 && r.data && (r.data.author_name || r.data.title),
+      profileUrl: `https://www.tiktok.com/@${username}` },
     { name: 'SoundCloud', url: `https://soundcloud.com/${u}`,
       check: r => r.status === 200 },
     { name: 'Pinterest', url: `https://www.pinterest.com/${u}/`,
@@ -577,13 +578,16 @@ async function checkUsername(username) {
       const { site, res } = item.value;
       checked.push({ platform: site.name, status: res ? res.status : 'timeout' });
       if (res && site.check(res)) {
+        let profileLink = site.profileUrl
+          || site.url.replace('https://api.github.com/users/', 'https://github.com/')
+          || site.url;
         found.push({
           context: `${site.uncertain ? '±' : ''} ${site.name} — profil ditemukan`,
           date: 'Username Match',
           tags: ['OSINT', 'Account Found'],
           details: {
-            'Platform': site.name,
-            'URL_Profile': site.url.replace('/api.github.com/users/', '/github.com/').replace('api.github.com/users/', 'github.com/'),
+            'Platform': site.name + (res.data?.author_name ? ` (${res.data.author_name})` : ''),
+            'URL_Profile': profileLink,
             'Catatan': site.uncertain ? 'Hasil tidak 100% pasti (platform membatasi bot)' : 'Terverifikasi via respons server'
           }
         });
