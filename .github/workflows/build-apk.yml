@@ -47,7 +47,8 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          echo "Gradle memakai JDK dari: $JAVA_HOME"
+          ./gradlew assembleDebug --no-daemon "-Dorg.gradle.java.home=$JAVA_HOME"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
