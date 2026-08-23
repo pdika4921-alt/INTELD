@@ -1,4 +1,4 @@
-const axios = require('axios');
+﻿const axios = require('axios');
 require('dotenv').config();
 
 function normalizePhone(raw) {
@@ -163,8 +163,17 @@ async function checkLeakCheckEmail(email) {
         leaked_passwords: leakedPasswords.slice(0, 15)
       };
     } catch (err) {
-      console.warn('LeakCheck v2 gagal, fallback ke public:', err.message);
-      // jatuh ke API gratis di bawah
+      const apiMsg = err.response?.data?.error || err.message;
+      // Key tanpa saldo/paket aktif -> jangan silent-fallback, laporkan apa adanya
+      if (err.response?.status === 403 || apiMsg.includes('plan')) {
+        return {
+          source: 'LeakCheck Pro', status: 'demo',
+          message: `API key belum punya paket aktif (${apiMsg}). Beli credits di leakcheck.io/dashboard untuk membuka fitur password.`,
+          breaches: [], leaked_passwords: []
+        };
+      }
+      console.warn('LeakCheck v2 gagal, fallback ke public:', apiMsg);
+      // error lain (timeout dll) -> jatuh ke API gratis di bawah
     }
   }
 
@@ -189,10 +198,10 @@ async function checkLeakCheckEmail(email) {
         leaked_passwords: []
       };
     }
-    return { source: hasKey ? 'LeakCheck Pro' : 'LeakCheck', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
+    return { source: 'LeakCheck (free)', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
   } catch (err) {
     if (err.response?.status === 404) {
-      return { source: hasKey ? 'LeakCheck Pro' : 'LeakCheck', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
+      return { source: 'LeakCheck (free)', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
     }
     return { source: 'LeakCheck', status: 'error', message: err.message };
   }
