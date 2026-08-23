@@ -392,33 +392,11 @@ app.get('/api/phone-lookup', async (req, res) => {
     }
 
     // ============================================
-    // 4. LeakCheck Phone Breach (jika ada key)
+    // 4. LeakCheck Phone Breach
+    // Catatan: API v2 LeakCheck hanya mendukung EMAIL.
+    // Query phone selalu 403 -> di-skip otomatis.
     // ============================================
     let leakcheckResult = null;
-    const leakcheckKey = process.env.LEAKCHECK_API_KEY;
-    if (leakcheckKey && !leakcheckKey.includes('your_')) {
-      try {
-        const r = await axios.get(
-          `https://leakcheck.io/api/public/phone/${digits}?key=${leakcheckKey}`,
-          { timeout: 10000 }
-        );
-        leakcheckResult = {
-          found: r.data.found || false,
-          count: r.data.count || 0,
-          sources: (r.data.sources || []).map(s => ({
-            name: s.name || s.source || 'Unknown',
-            date: s.date || '-'
-          }))
-        };
-      } catch (e) {
-        if (e.response?.status === 404 || e.response?.data?.error === 'not_found') {
-          leakcheckResult = { found: false, count: 0, sources: [] };
-        } else {
-          console.warn('LeakCheck failed:', e.message);
-          leakcheckResult = null;
-        }
-      }
-    }
 
     // Tunggu hasil carrier
     const carrierResolved = await Promise.all(carrierPromises);

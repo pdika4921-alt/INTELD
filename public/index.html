@@ -1764,6 +1764,35 @@
       `;
     }
 
+    // 10b. LeakCheck Pro — breach + password bocor
+    if ((src.source === 'LeakCheck Pro' || src.source === 'LeakCheck') && src.breaches !== undefined) {
+      let out = '';
+      if (src.found_count > 0) {
+        out += `<p style="color: var(--danger); font-size: 0.85rem; margin-bottom: 10px;">🚨 Ditemukan di ${src.found_count} kebocoran data!</p>`;
+      } else {
+        out += '<div class="empty-result">✅ Tidak ditemukan di database LeakCheck</div>';
+      }
+      (src.breaches || []).forEach(b => {
+        out += `
+          <div class="breach-item">
+            <div class="breach-name">📂 ${b.Name}</div>
+            <div class="breach-date">📅 ${b.BreachDate} · ${b.DataClasses.join(', ')}</div>
+          </div>
+        `;
+      });
+      // Password bocor
+      if (src.leaked_passwords?.length > 0) {
+        out += `<p style="font-size: 0.75rem; color: var(--muted); margin: 12px 0 6px; font-family: var(--mono); text-transform: uppercase;">🔑 PASSWORD TEREXPOS (${src.leaked_passwords.length}):</p>`;
+        out += src.leaked_passwords.map(p => `
+          <div class="raw-key-value" style="margin-bottom: 4px;">
+            <div class="k">${p.source || 'db'}</div>
+            <div class="v sensitive">${p.password}</div>
+          </div>
+        `).join('');
+      }
+      return out;
+    }
+
     // 11. Domain Check
     if (src.source === 'Domain Check') {
       const d = src.data;

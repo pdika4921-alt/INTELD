@@ -122,9 +122,53 @@ async function checkHackMyIP(email) {
 }
 
 // =============================================
-// 2b. LeakCheck Public - GRATIS tanpa key (email)
+// 2b. LeakCheck - API v2 (berbayar) atau Public gratis
 // =============================================
 async function checkLeakCheckEmail(email) {
+  const apiKey = process.env.LEAKCHECK_API_KEY;
+  const hasKey = apiKey && !apiKey.includes('your_') && apiKey !== 'dummy';
+
+  // ====== API v2 dengan key: detail lengkap termasuk PASSWORD ======
+  if (hasKey) {
+    try {
+      const r = await axios.get(
+        'https://leakcheck.io/api/v2/query',
+        {
+          params: { email },
+          headers: { 'X-API-KEY': apiKey },
+          timeout: 20000
+        }
+      );
+      const d = r.data;
+      if (!d.found) {
+        return { source: 'LeakCheck Pro', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
+      }
+      const breached = [];
+      const leakedPasswords = [];
+      for (const item of (d.result || [])) {
+        const f = item.fields || {};
+        breached.push({
+          Name: item.source || 'Unknown DB',
+          BreachDate: item.date || '-',
+          DataClasses: Object.keys(f).map(k => k.charAt(0).toUpperCase() + k.slice(1)),
+          IsVerified: true,
+          PwnCount: 0
+        });
+        if (f.password) leakedPasswords.push({ source: item.source, password: f.password });
+      }
+      return {
+        source: 'LeakCheck Pro', status: 'success',
+        found_count: d.count || breached.length,
+        breaches: breached,
+        leaked_passwords: leakedPasswords.slice(0, 15)
+      };
+    } catch (err) {
+      console.warn('LeakCheck v2 gagal, fallback ke public:', err.message);
+      // jatuh ke API gratis di bawah
+    }
+  }
+
+  // ====== Fallback: API publik gratis ======
   try {
     const r = await axios.get(
       `https://leakcheck.io/api/public?email=${encodeURIComponent(email)}`,
@@ -141,13 +185,14 @@ async function checkLeakCheckEmail(email) {
           DataClasses: ['Passwords', 'Email addresses'],
           IsVerified: true,
           PwnCount: 0
-        }))
+        })),
+        leaked_passwords: []
       };
     }
-    return { source: 'LeakCheck', status: 'success', found_count: 0, breaches: [] };
+    return { source: hasKey ? 'LeakCheck Pro' : 'LeakCheck', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
   } catch (err) {
     if (err.response?.status === 404) {
-      return { source: 'LeakCheck', status: 'success', found_count: 0, breaches: [] };
+      return { source: hasKey ? 'LeakCheck Pro' : 'LeakCheck', status: 'success', found_count: 0, breaches: [], leaked_passwords: [] };
     }
     return { source: 'LeakCheck', status: 'error', message: err.message };
   }
