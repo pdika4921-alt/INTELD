@@ -600,7 +600,13 @@ async function checkUsername(username) {
     source: 'Username OSINT',
     status: 'success',
     rawData: found,
-    stats: { total_checked: checked.length, found: found.length }
+    stats: { total_checked: checked.length, found: found.length },
+    // Platform yang memblokir bot — hanya bisa dicek manual via link
+    manual_links: [
+      { name: '📘 Facebook', url: `https://www.facebook.com/${username}` },
+      { name: '👻 Snapchat', url: `https://www.snapchat.com/add/${username}` },
+      { name: '🎵 TikTok Studio', url: `https://www.tiktok.com/@${username}` }
+    ]
   };
 }
 

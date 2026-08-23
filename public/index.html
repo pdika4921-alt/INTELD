@@ -1645,8 +1645,29 @@
 
   // ---- RENDER SOURCE BODY ----
   function renderSourceBody(src) {
+    // 0. Username OSINT tanpa hasil — tetap tampilkan manual links
+    if (src.source === 'Username OSINT' && src.manual_links && (!src.rawData || src.rawData.length === 0)) {
+      return `
+        <div class="empty-result">Tidak ditemukan akun aktif di ${src.stats?.total_checked || 'semua'} platform yang diprobe</div>
+        <div style="margin-top: 12px; padding: 12px 14px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;">
+          <p style="font-size: 0.72rem; color: var(--warning); font-family: var(--mono); margin-bottom: 8px;">🔗 CEK MANUAL (KLIK LANGSUNG):</p>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            ${src.manual_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="data-tag" style="text-decoration:none; padding:7px 14px; cursor:pointer; color:var(--accent); border-color:rgba(0,255,65,0.35);">${l.name} ↗</a>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
     // 1. RAW DATA (Tabel Ekspansi)
     if (src.rawData && src.rawData.length > 0) {
+      // Nilai URL jadi link klik-able
+      const renderVal = (val) => {
+        const s = String(val);
+        if (s.startsWith('http')) {
+          return `<a href="${s}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">${s}</a>`;
+        }
+        return s;
+      };
       let tableHtml = `<table class="raw-data-table">
         <thead>
           <tr>
@@ -1678,7 +1699,7 @@
             tableHtml += `
               <div class="raw-key-value">
                 <div class="k">${key.replace(/_/g, ' ')}</div>
-                <div class="v ${isSensitive ? 'sensitive' : ''}">${value}</div>
+                <div class="v ${isSensitive ? 'sensitive' : ''}">${renderVal(value)}</div>
               </div>`;
           }
         }
@@ -1687,6 +1708,19 @@
       });
 
       tableHtml += `</tbody></table>`;
+
+      // Manual check links (platform anti-bot seperti Facebook/Snapchat)
+      if (src.manual_links?.length > 0) {
+        tableHtml += `
+          <div style="margin-top: 14px; padding: 12px 14px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;">
+            <p style="font-size: 0.72rem; color: var(--warning); font-family: var(--mono); margin-bottom: 8px;">🔗 PLATFORM ANTI-BOT — CEK MANUAL (KLIK LANGSUNG):</p>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+              ${src.manual_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="data-tag" style="text-decoration:none; padding:7px 14px; cursor:pointer; color:var(--accent); border-color:rgba(0,255,65,0.35);">${l.name} ↗</a>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
       return tableHtml;
     }
 
