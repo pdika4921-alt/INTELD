@@ -568,6 +568,17 @@
 </head>
 <body>
 
+<!-- BOOT SEQUENCE -->
+<div id="bootOverlay" style="position:fixed;inset:0;z-index:99999;background:#000;color:#00ff41;font-family:'Share Tech Mono',monospace;font-size:0.85rem;padding:40px;line-height:1.9;">
+  <div id="bootLines"></div>
+</div>
+
+<!-- STATUS BAR BAWAH -->
+<div id="statusBar" style="position:fixed;bottom:0;left:0;right:0;z-index:9998;background:rgba(3,8,3,0.95);border-top:1px solid #1a3320;font-family:'Share Tech Mono',monospace;font-size:0.68rem;color:#4a7a52;padding:5px 14px;display:flex;justify-content:space-between;letter-spacing:1px;backdrop-filter:blur(4px);">
+  <span id="sbLeft">SYSTEM INITIALIZING...</span>
+  <span id="sbRight"></span>
+</div>
+
 <canvas id="matrixRain"></canvas>
 <div class="scanlines"></div>
 <div class="crt-vignette"></div>
@@ -1017,6 +1028,60 @@
 
   ::selection { background: rgba(0,255,65,0.3); color: #fff; }
 
+  /* ===== DRAMA ENHANCEMENT v2.4 ===== */
+  body {
+    background-image:
+      linear-gradient(rgba(0, 255, 65, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 65, 0.025) 1px, transparent 1px) !important;
+    background-size: 40px 40px !important;
+    padding-bottom: 32px;
+  }
+
+  main { animation: fadeUp 0.6s ease-out; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  .source-card, .stat-card {
+    transition: all 0.25s ease !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .source-card::before, .stat-card::before {
+    content: '';
+    position: absolute;
+    top: -150%; left: -80%;
+    width: 60%; height: 400%;
+    background: linear-gradient(100deg, transparent, rgba(0,255,65,0.06), transparent);
+    transform: rotate(10deg);
+    pointer-events: none;
+  }
+  .source-card:hover::before, .stat-card:hover::before {
+    animation: sweep 0.9s ease forwards;
+  }
+  @keyframes sweep { to { left: 130%; } }
+
+  .source-card:hover, .stat-card:hover {
+    border-color: rgba(0,255,65,0.45) !important;
+    box-shadow: 0 0 22px rgba(0,255,65,0.12), inset 0 0 20px rgba(0,0,0,0.4) !important;
+    transform: translateY(-2px);
+  }
+
+  .section-title { text-shadow: 0 0 8px rgba(0,255,65,0.35); }
+  .section-title::after {
+    content: '▊▊';
+    color: var(--accent);
+    margin-left: 8px;
+    font-size: 0.55rem;
+    vertical-align: middle;
+    animation: blink-cursor 1s step-end infinite;
+  }
+
+  .btn-add, .btn-del {
+    transition: all 0.2s !important;
+  }
+  .btn-add:hover, .btn-del:hover { filter: brightness(1.3); }
+
+  input:focus, select:focus { caret-shape: block; }
+
   /* ===== TEMA MINIMAL (tanpa animasi berat) ===== */
   body.minimal #matrixRain,
   body.minimal .scanlines { display: none !important; }
@@ -1241,6 +1306,22 @@
       <div id="cmpResult" style="margin-top:12px;"></div>
     </div>
 
+    <!-- SECURITY: 2FA -->
+    <div class="watchlist-form">
+      <h3>🔐 Two-Factor Authentication (2FA)</h3>
+      <div id="tfaStatus" style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;">Memuat status 2FA...</div>
+      <div class="form-row">
+        <button class="btn-add" onclick="setup2fa()">🔐 Setup / Regenerate QR</button>
+        <input type="text" id="tfaEnableCode" placeholder="Kode dari authenticator (6 digit)" maxlength="6" />
+        <button class="btn-add" onclick="enable2fa()">Aktifkan</button>
+        <button class="btn-del" onclick="disable2fa()" style="border-color:var(--danger);color:var(--danger);">Nonaktifkan</button>
+      </div>
+      <div id="tfaQrBox" style="display:none;margin-top:14px;text-align:center;">
+        <img id="tfaQr" alt="QR 2FA" style="background:#fff;padding:8px;border-radius:10px;width:180px;height:180px;" />
+        <p style="font-size:0.72rem;color:var(--muted);margin-top:8px;">Scan dengan Google Authenticator/Authy lalu masukkan kode → Aktifkan.<br>Secret manual: <code id="tfaSecretText" style="color:var(--accent);"></code></p>
+      </div>
+    </div>
+
     <!-- AI SUMMARY CONFIG NOTE -->
     <div style="padding:12px 14px;background:rgba(100,116,139,0.08);border:1px solid rgba(100,116,139,0.3);border-radius:8px;font-size:0.75rem;color:var(--muted);">
       💡 AI Summary & tombol Share muncul otomatis di hasil pencarian. AI butuh <code>OPENAI_API_KEY</code> di .env.
@@ -1298,12 +1379,25 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>#</th><th>Username</th><th>Role</th><th>Dibuat</th><th></th></tr>
+          <tr><th>#</th><th>Username</th><th>Role</th><th>2FA</th><th>Dibuat</th><th></th></tr>
         </thead>
         <tbody id="usersTableBody">
+          <tr><td colspan="6" style="text-align:center; color:var(--muted); padding:24px;">Memuat...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="section-title" style="margin-top:28px;">📜 Audit Log — Aktivitas Sistem (200 terakhir)</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Detail</th><th>IP</th></tr>
+        </thead>
+        <tbody id="auditTableBody">
           <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Memuat...</td></tr>
         </tbody>
       </table>
+      <button class="btn-del" onclick="loadAudit()" style="margin-top:12px;">🔄 Refresh Log</button>
     </div>
   </div>
 
@@ -1450,7 +1544,7 @@
     if (name === 'history') loadHistory();
     if (name === 'watchlist') loadWatchlist();
     if (name === 'stats') loadStats();
-    if (name === 'users') loadUsers();
+    if (name === 'users') { loadUsers(); loadAudit(); load2faStatus(); loadCompareOptions(); }
   }
 
   // ---- FUNGSI BUKA / TUTUP TABEL EKSPANSI ----
@@ -1732,23 +1826,15 @@
 
   // ---- RENDER SOURCE BODY ----
   function renderSourceBody(src) {
-    // Helper: blok manual links + keterangan platform tertutup
+    // Helper: blok manual links
     function renderManualLinks(src) {
-      let html = `
+      return `
         <div style="margin-top: 12px; padding: 12px 14px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;">
           <p style="font-size: 0.72rem; color: var(--warning); font-family: var(--mono); margin-bottom: 8px;">🔗 CEK MANUAL — PLATFORM ANTI-BOT (KLIK LANGSUNG):</p>
           <div style="display:flex; flex-wrap:wrap; gap:8px;">
             ${src.manual_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="data-tag" style="text-decoration:none; padding:7px 14px; cursor:pointer; color:var(--accent); border-color:rgba(0,255,65,0.35);">${l.name} ↗</a>`).join('')}
           </div>
         </div>`;
-      if (src.no_username_check?.length) {
-        html += `
-        <div style="margin-top: 10px; padding: 12px 14px; background: rgba(100,116,139,0.08); border: 1px solid rgba(100,116,139,0.3); border-radius: 8px;">
-          <p style="font-size: 0.72rem; color: var(--muted); font-family: var(--mono); margin-bottom: 6px;">🔒 TIDAK BISA DICEK VIA USERNAME:</p>
-          ${src.no_username_check.map(x => `<div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 4px;"><strong style="color: var(--text);">${x.cat}:</strong> ${x.items}</div>`).join('')}
-        </div>`;
-      }
-      return html;
     }
 
     // 0. Username OSINT tanpa hasil — tetap tampilkan manual links
@@ -2353,20 +2439,21 @@
       }
       const data = await res.json();
       if (!data.data?.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Belum ada user terdaftar</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:24px;">Belum ada user terdaftar</td></tr>';
         return;
       }
       tbody.innerHTML = data.data.map(u => `
         <tr>
           <td style="font-family:var(--mono); color:var(--muted);">${u.id}</td>
-          <td style="font-weight:600; font-family:var(--mono);">${u.username}${u.username === _myRole ? '' : ''}</td>
+          <td style="font-weight:600; font-family:var(--mono);">${u.username}</td>
           <td>${u.role === 'admin' ? '<span class="risk-pill HIGH">👑 admin</span>' : '<span class="badge email">user</span>'}</td>
+          <td>${u.totp_enabled ? '🔐 <span style="color:var(--success);">aktif</span>' : '<span style="color:var(--muted);">—</span>'}</td>
           <td style="font-size:0.78rem; color:var(--muted);">${new Date(u.created_at).toLocaleDateString('id-ID')}</td>
           <td><button class="btn-del" onclick="deleteUser(${u.id}, '${u.username}', this)">Hapus</button></td>
         </tr>
       `).join('');
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Backend tidak tersedia</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:24px;">Backend tidak tersedia</td></tr>`;
     }
   }
 
@@ -2706,6 +2793,82 @@
     ctx.fillText('TARGET', cx, cy - 14);
   }
 
+  // ---- 2FA ----
+  async function load2faStatus() {
+    try {
+      const users = (await (await authFetch('/api/users')).json()).data || [];
+      const me = users.find(u => u.username === sessionStorage.getItem('bi_user'));
+      document.getElementById('tfaStatus').innerHTML = me?.totp_enabled
+        ? '✅ <span style="color:var(--success)">2FA AKTIF</span> untuk akun kamu — login akan diminta kode authenticator'
+        : '⚠️ 2FA <strong>belum aktif</strong> — aktifkan untuk proteksi maksimal akun admin';
+    } catch {
+      // non-admin tidak bisa lihat /api/users; cek via status lain
+      document.getElementById('tfaStatus').textContent = 'Status 2FA tersedia hanya untuk admin';
+    }
+  }
+
+  async function setup2fa() {
+    try {
+      const res = await authFetch('/api/2fa/setup', { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      document.getElementById('tfaQrBox').style.display = 'block';
+      document.getElementById('tfaQr').src = data.data.qr;
+      document.getElementById('tfaSecretText').textContent = data.data.secret;
+    } catch (e) { alert('Setup 2FA gagal: ' + e.message); }
+  }
+
+  async function enable2fa() {
+    const code = document.getElementById('tfaEnableCode').value.trim();
+    if (!code) return alert('Masukkan kode dari authenticator!');
+    try {
+      const res = await authFetch('/api/2fa/enable', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      alert('✅ 2FA AKTIF! Login berikutnya akan diminta kode authenticator.');
+      load2faStatus();
+    } catch (e) { alert('Gagal aktivasi 2FA: ' + e.message); }
+  }
+
+  async function disable2fa() {
+    if (!confirm('Nonaktifkan 2FA?')) return;
+    try {
+      const res = await authFetch('/api/2fa/disable', { method:'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      alert('2FA dinonaktifkan');
+      load2faStatus();
+    } catch (e) { alert('Gagal: ' + e.message); }
+  }
+
+  // ---- AUDIT LOG ----
+  async function loadAudit() {
+    const tbody = document.getElementById('auditTableBody');
+    try {
+      const res = await authFetch('/api/audit');
+      if (res.status === 403) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--warning);padding:24px;">🔒 Hanya admin</td></tr>';
+        return;
+      }
+      const data = await res.json();
+      if (!data.data?.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Belum ada aktivitas</td></tr>';
+        return;
+      }
+      const actColor = a => a.includes('failed') ? 'var(--danger)' : a.startsWith('login') ? 'var(--success)' : 'var(--accent)';
+      tbody.innerHTML = data.data.map(r => `
+        <tr>
+          <td style="font-size:0.72rem;font-family:var(--mono);color:var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
+          <td style="font-family:var(--mono);">${r.username || '-'}</td>
+          <td><span class="badge email" style="color:${actColor(r.action)};">${r.action}</span></td>
+          <td style="font-size:0.75rem;font-family:var(--mono);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.detail || ''}">${r.detail || '-'}</td>
+          <td style="font-family:var(--mono);font-size:0.72rem;color:var(--muted);">${r.ip || '-'}</td>
+        </tr>`).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Backend tidak tersedia</td></tr>`;
+    }
+  }
+
   // ---- EXPORT REPORT ----
   function downloadReport() {
     const d = window._lastPhoneReport;
@@ -2953,6 +3116,55 @@
 </script>
 
 <script>
+  // ---- BOOT SEQUENCE ----
+  (function() {
+    const lines = [
+      'BREACH INTEL SECURE TERMINAL v2.4',
+      '(c) INTEL DIVISION — RESTRICTED ACCESS',
+      '',
+      '> mem check ............ 65536K OK',
+      '> loading kernel_intel.bin ......... OK',
+      '> mounting /dev/osint .............. OK',
+      '> establishing encrypted tunnel ... OK',
+      '> bypassing firewalls ............. OK',
+      '> injecting intelligence modules .. OK',
+      '> ACCESS GRANTED',
+      '',
+      'Launching interface...'
+    ];
+    const el = document.getElementById('bootLines');
+    let li = 0;
+    function nextLine() {
+      if (li >= lines.length) {
+        setTimeout(() => {
+          const ov = document.getElementById('bootOverlay');
+          ov.style.transition = 'opacity 0.5s';
+          ov.style.opacity = '0';
+          setTimeout(() => ov.remove(), 500);
+        }, 400);
+        return;
+      }
+      const div = document.createElement('div');
+      div.textContent = lines[li];
+      if (lines[li].includes('ACCESS GRANTED')) { div.style.color = '#fff'; div.style.textShadow = '0 0 10px #00ff41'; }
+      el.appendChild(div);
+      li++;
+      setTimeout(nextLine, lines[li - 1] === '' ? 80 : 130 + Math.random() * 120);
+    }
+    nextLine();
+  })();
+
+  // ---- STATUS BAR ----
+  (function() {
+    const hex = () => Array.from({length: 8}, () => '0123456789ABCDEF'[Math.floor(Math.random()*16)]).join('');
+    setInterval(() => {
+      document.getElementById('sbLeft').textContent =
+        `[${new Date().toLocaleTimeString('id-ID')}] NODE:ONLINE │ DB:SQLITE │ ENC:AES-256 │ TRACE_ID:${hex()}`;
+      document.getElementById('sbRight').textContent =
+        `THREAT LEVEL: ${['LOW','GUARDED','ELEVATED','SEVERE'][Math.floor(Math.random()*4)]} │ PKT:${Math.floor(Math.random()*9999)} │ v2.4`;
+    }, 1000);
+  })();
+
   // ---- PWA SERVICE WORKER REGISTRATION ----
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

@@ -36,6 +36,14 @@ function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
 
+// Audit log helper
+function audit(req, action, detail = '') {
+  try {
+    db.raw.prepare(`INSERT INTO audit_log (username, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(req.session?.username || 'anon', action, String(detail).substring(0, 300), req.ip || '-', new Date().toISOString());
+  } catch {}
+}
+
 (function seedAdmin() {
   const count = db.raw.prepare(`SELECT COUNT(*) AS c FROM users`).get().c;
   if (count === 0) {
@@ -114,12 +122,18 @@ app.post('/api/login', loginLimiter, (req, res) => {
   if (user) {
     const hash = hashPassword(password, user.salt);
     if (crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(user.password_hash))) {
+      // 2FA aktif? minta token dulu
+      if (user.totp_enabled && user.totp_secret) {
+        req.session.pending2fa = user.id;
+        return res.json({ success: false, need_2fa: true, message: 'Masukkan kode authenticator' });
+      }
       req.session.authenticated = true;
       req.session.username = user.username;
       req.session.role = user.role;
+      audit(req, 'login', `user=${user.username} role=${user.role}`);
       return res.json({ success: true, role: user.role, username: user.username });
     }
-    // user ada tapi password salah
+    audit(req, 'login_failed', `user=${username}`);
     setTimeout(() => res.status(401).json({ success: false, error: 'Username atau password salah' }), 600);
     return;
   }
@@ -129,11 +143,82 @@ app.post('/api/login', loginLimiter, (req, res) => {
     req.session.authenticated = true;
     req.session.username = ADMIN_USER;
     req.session.role = 'admin';
+    audit(req, 'login', 'admin env');
     return res.json({ success: true, role: 'admin', username: ADMIN_USER });
   }
 
+  audit(req, 'login_failed', `user=${username}`);
   // Delay kecil anti brute-force
   setTimeout(() => res.status(401).json({ success: false, error: 'Username atau password salah' }), 600);
+});
+
+// Verifikasi kode 2FA saat login
+app.post('/api/login/2fa', loginLimiter, (req, res) => {
+  const { code } = req.body || {};
+  const userId = req.session?.pending2fa;
+  if (!userId || !code) return res.status(401).json({ success: false, error: 'Sesi 2FA tidak valid' });
+  const user = db.raw.prepare(`SELECT * FROM users WHERE id = ?`).get(userId);
+  if (!user || !user.totp_secret) return res.status(401).json({ success: false, error: '2FA tidak aktif' });
+  const { authenticator } = require('otplib');
+  try {
+    if (!authenticator.check(String(code).trim(), user.totp_secret)) throw new Error('kode salah');
+    req.session.authenticated = true;
+    req.session.username = user.username;
+    req.session.role = user.role;
+    delete req.session.pending2fa;
+    audit(req, 'login_2fa', `user=${user.username}`);
+    res.json({ success: true, role: user.role, username: user.username });
+  } catch {
+    setTimeout(() => res.status(401).json({ success: false, error: 'Kode 2FA salah' }), 500);
+  }
+});
+
+// ===== 2FA Setup (harus sudah login) =====
+app.post('/api/2fa/setup', requireAuth, async (req, res) => {
+  const { authenticator } = require('otplib');
+  const QRCode = require('qrcode');
+  const secret = authenticator.generateSecret();
+  db.raw.prepare(`UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE username = ?`).run(secret, req.session.username);
+  const otpauth = authenticator.keyuri(req.session.username, 'BREACH INTEL', secret);
+  const qrDataUrl = await QRCode.toDataURL(otpauth);
+  res.json({ success: true, data: { secret, otpauth, qr: qrDataUrl } });
+});
+
+app.post('/api/2fa/enable', requireAuth, (req, res) => {
+  const { code } = req.body || {};
+  const user = db.raw.prepare(`SELECT * FROM users WHERE username = ?`).get(req.session.username);
+  if (!user?.totp_secret) return res.status(400).json({ error: 'Jalankan setup dulu' });
+  const { authenticator } = require('otplib');
+  if (!authenticator.check(String(code || '').trim(), user.totp_secret)) {
+    return res.status(401).json({ error: 'Kode salah — coba lagi' });
+  }
+  db.raw.prepare(`UPDATE users SET totp_enabled = 1 WHERE username = ?`).run(req.session.username);
+  audit(req, '2fa_enabled', req.session.username);
+  res.json({ success: true });
+});
+
+app.post('/api/2fa/disable', requireAuth, (req, res) => {
+  db.raw.prepare(`UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE username = ?`).run(req.session.username);
+  audit(req, '2fa_disabled', req.session.username);
+  res.json({ success: true });
+});
+
+// Audit log (admin)
+app.get('/api/audit', requireAuth, requireAdmin, (req, res) => {
+  const rows = db.raw.prepare(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200`).all();
+  res.json({ success: true, data: rows });
+});
+
+// Health check untuk uptime monitor
+app.get('/health', (req, res) => {
+  let dbOk = false;
+  try { db.raw.prepare(`SELECT 1`).get(); dbOk = true; } catch {}
+  res.status(dbOk ? 200 : 503).json({
+    status: dbOk ? 'ok' : 'degraded',
+    db: dbOk,
+    uptime_seconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
 });
 
 function requireAdmin(req, res, next) {
@@ -145,7 +230,7 @@ function requireAdmin(req, res, next) {
 
 // ===== Manajemen User (admin only) =====
 app.get('/api/users', requireAuth, requireAdmin, (req, res) => {
-  const rows = db.raw.prepare(`SELECT id, username, role, created_at FROM users ORDER BY created_at DESC`).all();
+  const rows = db.raw.prepare(`SELECT id, username, role, totp_enabled, created_at FROM users ORDER BY created_at DESC`).all();
   res.json({ success: true, data: rows });
 });
 
@@ -232,6 +317,7 @@ app.get('/api/search', async (req, res) => {
       );
     });
 
+    audit(req, 'search', `${query.trim()} [${searchType}]`);
     res.json({ success: true, data: results, history_id: historyId });
   } catch (err) {
     console.error('Search error:', err);
@@ -1249,6 +1335,24 @@ cron.schedule('0 8 * * *', () => {
   checkWatchlist().then(r =>
     console.log(`   Selesai: ${r.checked} target dicek, ${r.alerts} alert terkirim`)
   );
+});
+
+// Backup database otomatis setiap hari jam 00:30 (simpan 7 hari terakhir)
+cron.schedule('30 0 * * *', () => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const backupDir = path.join(__dirname, 'data', 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    const stamp = new Date().toISOString().split('T')[0];
+    db.raw.prepare(`VACUUM INTO ?`).run(path.join(backupDir, `breach_intel-${stamp}.db`));
+    // hapus backup > 7 file
+    const files = fs.readdirSync(backupDir).filter(f => f.endsWith('.db')).sort();
+    while (files.length > 7) fs.unlinkSync(path.join(backupDir, files.shift()));
+    console.log(`💾 Backup database selesai: breach_intel-${stamp}.db`);
+  } catch (e) {
+    console.error('Backup gagal:', e.message);
+  }
 });
 
 app.listen(PORT, () => {

@@ -629,13 +629,6 @@ async function checkUsername(username) {
       { name: '🏷️ eBay', url: `https://www.ebay.com/usr/${username}` },
       { name: '💼 LinkedIn', url: `https://www.linkedin.com/in/${username}` }
     ],
-    // Platform yang TIDAK BISA dicek via username (pakai nomor HP / tertutup)
-    no_username_check: [
-      { cat: 'Pesan & Chat', items: 'WhatsApp, LINE, WeChat, KakaoTalk, Signal, Viber, IMO, MiChat — pakai nomor HP, tidak ada profil username publik' },
-      { cat: 'E-Wallet & Finansial', items: 'GoPay, OVO, DANA, LinkAja, ShopeePay, PayPal, Wise, Jenius — cek nama via fitur transfer & lihat nama penerima di masing-masing app (butuh nomor HP)' },
-      { cat: 'E-Commerce Indonesia', items: 'Shopee, Tokopedia, Lazada, Bukalapak, Blibli — cari via nama toko di app (username seller tidak ekspos publik)' },
-      { cat: 'Game Lainnya', items: 'Epic Games, Moonton (ML), HoYoverse — pakai ID game, bukan username' }
-    ]
   };
 }
 

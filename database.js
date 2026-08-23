@@ -66,7 +66,23 @@ sqlite.exec(`
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    action TEXT NOT NULL,
+    detail TEXT,
+    ip TEXT,
+    created_at TEXT NOT NULL
+  );
 `);
+
+// Kolom 2FA
+try {
+  sqlite.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT;`);
+} catch { /* sudah ada */ }
+try {
+  sqlite.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0;`);
+} catch { /* sudah ada */ }
 
 // Migrasi otomatis dari JSON lama (sekali saja)
 const OLD_JSON = path.join(DATA_DIR, 'breach_intel.json');
