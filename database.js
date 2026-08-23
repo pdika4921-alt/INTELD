@@ -57,6 +57,17 @@ try {
   sqlite.exec(`ALTER TABLE search_history ADD COLUMN result_json TEXT;`);
 } catch { /* kolom sudah ada */ }
 
+// Tabel share link read-only
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS share_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    history_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+`);
+
 // Migrasi otomatis dari JSON lama (sekali saja)
 const OLD_JSON = path.join(DATA_DIR, 'breach_intel.json');
 try {

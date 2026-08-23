@@ -1041,6 +1041,7 @@
   <button class="tab-btn" onclick="switchTab('history', this)">📋 Riwayat</button>
   <button class="tab-btn" onclick="switchTab('watchlist', this)">👁️ Watchlist</button>
   <button class="tab-btn" onclick="switchTab('batch', this)">📦 Batch</button>
+  <button class="tab-btn" onclick="switchTab('tools', this)">🧰 Tools</button>
   <button class="tab-btn" onclick="switchTab('stats', this)">📊 Statistik</button>
   <button class="tab-btn" onclick="switchTab('users', this)">👥 Users</button>
   <button class="tab-btn" onclick="toggleTheme()" title="Ganti tema">🎨</button>
@@ -1067,6 +1068,7 @@
       <div class="search-main-row">
         <span class="prompt-symbol">root@intel:~$</span>
         <input type="text" id="queryInput" placeholder="masukkan target..." autocomplete="off" spellcheck="false" />
+        <button class="btn-search" id="voiceBtn" onclick="startVoiceSearch()" title="Pencarian suara" style="padding:11px 14px; border-color:var(--muted); color:var(--muted); background:transparent;">🎤</button>
         <button class="btn-search" id="searchBtn" onclick="runSearch()">SCAN</button>
         <button class="btn-search" id="phoneLookupBtn" onclick="runPhoneLookup(true)" style="display:none; border-color:var(--warning); color:var(--warning); background:linear-gradient(180deg, rgba(255,176,0,0.15), rgba(255,176,0,0.25));">TRACE</button>
       </div>
@@ -1181,6 +1183,67 @@
         </tbody>
       </table>
       <button class="btn-del" id="batchExportBtn" onclick="exportBatchCSV()" style="display:none; margin-top:14px; background:rgba(0,255,65,0.12); border-color:var(--success); color:var(--success); padding:8px 18px;">⬇️ Export CSV</button>
+    </div>
+  </div>
+
+  <!-- TAB: TOOLS -->
+  <div id="tab-tools" class="tab-content">
+
+    <!-- EMAIL FINDER -->
+    <div class="watchlist-form">
+      <h3>📧 Email Finder — nama + domain → kandidat email</h3>
+      <div class="form-row">
+        <input type="text" id="efName" placeholder="Nama lengkap (contoh: Budi Santoso)" />
+        <input type="text" id="efDomain" placeholder="Domain (contoh: tokopedia.com)" />
+        <button class="btn-add" onclick="runEmailFinder()">Cari</button>
+      </div>
+      <div id="efResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- PASSWORD BREACH -->
+    <div class="watchlist-form">
+      <h3>🔑 Password Breach — siapa saja pakai password ini? (LeakCheck Pro)</h3>
+      <div class="form-row">
+        <input type="text" id="pbPass" placeholder="Password untuk dicek..." />
+        <button class="btn-add" onclick="runPasswordBreach()">Cek</button>
+      </div>
+      <div id="pbResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- IP LOOKUP -->
+    <div class="watchlist-form">
+      <h3>🌐 IP Lookup — lokasi, ISP, deteksi VPN/proxy, port terbuka</h3>
+      <div class="form-row">
+        <input type="text" id="ipInput" placeholder="Alamat IP (contoh: 8.8.8.8)" />
+        <button class="btn-add" onclick="runIpLookup()">Lookup</button>
+      </div>
+      <div id="ipResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- USERNAME GENERATOR -->
+    <div class="watchlist-form">
+      <h3>👤 Username Generator — dari nama asli → kemungkinan handle</h3>
+      <div class="form-row">
+        <input type="text" id="ugName" placeholder="Nama target (contoh: Budi Santoso)" />
+        <button class="btn-add" onclick="runUsernameGen()">Generate</button>
+      </div>
+      <div id="ugResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- COMPARE TARGETS -->
+    <div class="watchlist-form">
+      <h3>⚖️ Compare Targets — dua riwayat pencarian = orang yang sama?</h3>
+      <div class="form-row">
+        <select id="cmpA"><option value="">— Target A —</option></select>
+        <select id="cmpB"><option value="">— Target B —</option></select>
+        <button class="btn-add" onclick="runCompare()">Bandingkan</button>
+      </div>
+      <div id="cmpResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- AI SUMMARY CONFIG NOTE -->
+    <div style="padding:12px 14px;background:rgba(100,116,139,0.08);border:1px solid rgba(100,116,139,0.3);border-radius:8px;font-size:0.75rem;color:var(--muted);">
+      💡 AI Summary & tombol Share muncul otomatis di hasil pencarian. AI butuh <code>OPENAI_API_KEY</code> di .env.
     </div>
   </div>
 
@@ -1357,6 +1420,26 @@
     document.getElementById('hackTerminal').classList.remove('show');
   }
 
+  // ---- VOICE SEARCH ----
+  function startVoiceSearch() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return alert('Browser tidak mendukung pencarian suara. Gunakan Chrome.');
+    const rec = new SR();
+    rec.lang = 'id-ID';
+    rec.interimResults = false;
+    const btn = document.getElementById('voiceBtn');
+    btn.style.color = 'var(--danger)';
+    btn.style.borderColor = 'var(--danger)';
+    rec.onresult = (e) => {
+      const text = e.results[0][0].transcript.replace(/\s/g, '');
+      document.getElementById('queryInput').value = text;
+      runSearch();
+    };
+    rec.onend = () => { btn.style.color = 'var(--muted)'; btn.style.borderColor = 'var(--muted)'; };
+    rec.onerror = () => { btn.style.color = 'var(--muted)'; btn.style.borderColor = 'var(--muted)'; };
+    rec.start();
+  }
+
   // ---- TAB SWITCHING ----
   function switchTab(name, btn) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1439,7 +1522,11 @@
       const serverData = await serverRes.json();
       
       if (serverData.success) {
+        window._lastSearchHistoryId = serverData.history_id || null;
         renderResults(serverData.data);
+        if (['email', 'name', 'username', 'phone'].includes(selectedType)) {
+          setTimeout(() => renderRiskExtras(serverData.data), 100);
+        }
       } else {
         throw new Error(serverData.error || 'Gagal memproses data');
       }
@@ -2349,6 +2436,275 @@
     if (ca && !ca.disabled) ca.textContent = t.checkAll;
   }
   document.addEventListener('DOMContentLoaded', applyLang);
+
+  // ---- TOOLS: EMAIL FINDER ----
+  async function runEmailFinder() {
+    const name = document.getElementById('efName').value.trim();
+    const domain = document.getElementById('efDomain').value.trim();
+    if (!name || !domain) return alert('Isi nama & domain!');
+    try {
+      const res = await authFetch('/api/tools/email-finder', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, domain}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      document.getElementById('efResult').innerHTML = `
+        <div style="font-size:0.78rem; color:${d.mx_valid ? 'var(--success)' : 'var(--danger)'}; margin-bottom:8px;">
+          ${d.mx_valid ? '✅ Domain aktif (mail server ada)' : '❌ Domain tidak punya mail server'} ${d.mx_records.length ? '· ' + d.mx_records.join(', ') : ''}
+        </div>
+        ${d.candidates.map((c,i) => `
+          <div class="raw-key-value" style="margin-bottom:5px;">
+            <div class="k">#${c.rank} (${c.pattern})</div>
+            <div class="v"><a href="#" onclick="document.getElementById('queryInput').value='${c.email}'; setSearchType('email'); switchTab('search', document.querySelectorAll('.tabs .tab-btn')[0]); return false;" style="color:var(--accent); text-decoration:none;">${c.email}</a></div>
+          </div>`).join('')}
+      `;
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  // ---- TOOLS: PASSWORD BREACH ----
+  async function runPasswordBreach() {
+    const password = document.getElementById('pbPass').value.trim();
+    if (!password) return alert('Masukkan password!');
+    try {
+      const res = await authFetch('/api/tools/password-breach', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      document.getElementById('pbResult').innerHTML = d.found
+        ? `<p style="color:var(--danger);font-size:0.85rem;">🚨 Password ini dipakai oleh ${d.count} akun yang bocor!</p>` +
+          d.results.map(r => `<div class="breach-item"><div class="breach-name">📂 ${r.source}</div><div class="breach-date">📅 ${r.date} · ${r.fields}</div></div>`).join('')
+        : '<div class="empty-result">✅ Password ini tidak ditemukan di database kebocoran</div>';
+    } catch (e) {
+      document.getElementById('pbResult').innerHTML = `<div class="error-box">${e.message}</div>`;
+    }
+  }
+
+  // ---- TOOLS: IP LOOKUP ----
+  async function runIpLookup() {
+    const ip = document.getElementById('ipInput').value.trim();
+    if (!ip) return alert('Masukkan IP!');
+    try {
+      const res = await authFetch('/api/tools/ip-lookup?ip=' + encodeURIComponent(ip));
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      const flag = f => f ? '✅ Ya' : 'Tidak';
+      document.getElementById('ipResult').innerHTML = `
+        <div class="info-grid">
+          <div class="info-item"><div class="key">Lokasi</div><div class="val">${d.location.city}, ${d.location.region}, ${d.location.country}</div></div>
+          <div class="info-item"><div class="key">ISP / Org</div><div class="val">${d.network.isp || '-'} · ${d.network.org || '-'}</div></div>
+          <div class="info-item"><div class="key">AS</div><div class="val" style="font-size:0.75rem;">${d.network.as || '-'}</div></div>
+          <div class="info-item"><div class="key">Timezone</div><div class="val">${d.location.timezone}</div></div>
+          <div class="info-item"><div class="key">VPN/Proxy?</div><div class="val" style="color:${d.flags.proxy_vpn ? 'var(--danger)' : 'var(--success)'};">${flag(d.flags.proxy_vpn)}</div></div>
+          <div class="info-item"><div class="key">Hosting/DC?</div><div class="val" style="color:${d.flags.hosting_dc ? 'var(--warning)' : 'var(--success)'};">${flag(d.flags.hosting_dc)}</div></div>
+          ${d.open_ports?.length ? `<div class="info-item" style="grid-column:1/-1;"><div class="key">Port Terbuka (Shodan)</div><div class="val" style="color:var(--danger);font-family:var(--mono);">${d.open_ports.join(', ')}</div></div>` : ''}
+          <div class="info-item" style="grid-column:1/-1;"><a href="${d.map_url}" target="_blank" rel="noopener" style="color:var(--accent);">🗺️ Lihat lokasi di Google Maps ↗</a></div>
+        </div>`;
+    } catch (e) {
+      document.getElementById('ipResult').innerHTML = `<div class="error-box">${e.message}</div>`;
+    }
+  }
+
+  // ---- TOOLS: USERNAME GENERATOR ----
+  async function runUsernameGen() {
+    const name = document.getElementById('ugName').value.trim();
+    if (!name) return alert('Masukkan nama target!');
+    try {
+      const res = await authFetch('/api/tools/username-generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      document.getElementById('ugResult').innerHTML = `
+        <p style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;">${data.data.candidates.length} kandidat handle. Klik untuk scan via @USER:</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${data.data.candidates.slice(0, 20).map(h => `<span class="data-tag" style="cursor:pointer;padding:7px 12px;" onclick="document.getElementById('queryInput').value='${h}'; setSearchType('username'); switchTab('search', document.querySelectorAll('.tabs .tab-btn')[0]); setTimeout(runSearch, 100);">@${h}</span>`).join('')}
+        </div>`;
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  // ---- TOOLS: COMPARE ----
+  async function loadCompareOptions() {
+    try {
+      const res = await authFetch('/api/history');
+      const data = await res.json();
+      if (!data.data?.length) return;
+      // hanya yang punya detail lengkap
+      const withDetail = data.data.filter(r => ['email','name','cross','batch-email','username'].includes(r.query_type));
+      for (const sel of [document.getElementById('cmpA'), document.getElementById('cmpB')]) {
+        sel.innerHTML = '<option value="">— pilih —</option>' + withDetail.map(r => `<option value="${r.id}">#${r.id} · ${r.query} [${r.risk_level}]</option>`).join('');
+      }
+    } catch {}
+  }
+
+  async function runCompare() {
+    const idA = document.getElementById('cmpA').value;
+    const idB = document.getElementById('cmpB').value;
+    if (!idA || !idB) return alert('Pilih kedua target!');
+    if (idA === idB) return alert('Pilih target yang berbeda!');
+    try {
+      const res = await authFetch('/api/tools/compare', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({idA, idB}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const d = data.data;
+      document.getElementById('cmpResult').innerHTML = `
+        <div style="padding:14px;background:rgba(0,255,65,0.06);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;">
+          <strong>${d.verdict}</strong>
+        </div>
+        <div class="info-grid">
+          <div class="info-item"><div class="key">Target A</div><div class="val">${d.a.query} [${d.a.risk}]</div></div>
+          <div class="info-item"><div class="key">Target B</div><div class="val">${d.b.query} [${d.b.risk}]</div></div>
+          <div class="info-item"><div class="key">Breach Sama (${d.shared_breaches.length})</div><div class="val" style="color:var(--danger);">${d.shared_breaches.join(', ') || '-'}</div></div>
+          <div class="info-item"><div class="key">Hanya di A (${d.only_a.length})</div><div class="val">${d.only_a.slice(0,5).join(', ') || '-'}</div></div>
+          <div class="info-item"><div class="key">Hanya di B (${d.only_b.length})</div><div class="val">${d.only_b.slice(0,5).join(', ') || '-'}</div></div>
+        </div>`;
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  // ---- SHARE RESULT ----
+  let _lastSearchHistoryId = null;
+  async function shareLastResult() {
+    if (!_lastSearchHistoryId) return alert('Share butuh riwayat tersimpan — lakukan pencarian dulu');
+    const days = prompt('Link aktif berapa hari? (maks 30)', '7');
+    if (!days) return;
+    try {
+      const res = await authFetch(`/api/share/${_lastSearchHistoryId}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({days: parseInt(days)}) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const url = location.origin + data.data.url;
+      await navigator.clipboard.writeText(url).catch(() => {});
+      prompt('Link read-only (sudah dicopy ke clipboard):', url);
+    } catch (e) { alert('Gagal share: ' + e.message); }
+  }
+
+  // ---- AI SUMMARY ----
+  window._lastFullResult = null;
+  async function aiSummarize() {
+    if (!window._lastFullResult) return alert('Tidak ada hasil untuk diringkas');
+    try {
+      const res = await authFetch('/api/tools/ai-summary', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ result: window._lastFullResult }) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      document.getElementById('aiSummaryBox')?.remove();
+      const box = document.createElement('div');
+      box.id = 'aiSummaryBox';
+      box.style.cssText = 'max-width:720px;margin:16px auto 0;padding:16px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.35);border-radius:10px;font-size:0.85rem;color:#d8ccf7;white-space:pre-wrap;';
+      box.innerHTML = '<strong style="color:#a78bfa;">🤖 AI ANALYST:</strong>\n' + data.data.summary;
+      document.getElementById('results').prepend(box);
+    } catch (e) { alert('AI summary gagal: ' + e.message); }
+  }
+
+  // ---- RISK SCORE PERSONAL + TIMELINE + IDENTITY GRAPH ----
+  function computeRiskScore(result) {
+    let score = 0;
+    const b = result.summary?.total_breaches || 0;
+    score += Math.min(b * 12, 50);
+    const sensitive = (result.summary?.data_classes || []).filter(c => /password|credit|bank|ktp|nik|address|birth/i.test(c));
+    score += sensitive.length * 10;
+    const liveSources = (result.sources || []).filter(s => s.status === 'success').length;
+    score += liveSources * 3;
+    if (result.owner_info?.social_accounts?.length) score += 10;
+    return { score: Math.min(score, 100), sensitive };
+  }
+
+  function renderRiskExtras(result) {
+    const el = document.getElementById('results');
+    const { score, sensitive } = computeRiskScore(result);
+    window._lastFullResult = result;
+
+    // Skor risiko
+    const recs = [];
+    if (sensitive.some(s => /password/i.test(s))) recs.push('🚨 Ganti password & aktifkan 2FA di semua akun terkait');
+    if (sensitive.some(s => /phone/i.test(s))) recs.push('📱 Waspadai SMS phishing — nomor HP terekspos');
+    if (sensitive.some(s => /(address|birth)/i.test(s))) recs.push('🏠 Alamat/TTL bocor — waspadai penipuan identitas');
+    if ((result.summary?.total_breaches || 0) > 0 && recs.length === 0) recs.push('✅ Data yang bocor tidak terlalu sensitif, tetap pantau via Watchlist');
+
+    // Timeline breach dari sumber dengan tanggal
+    const timeline = [];
+    for (const src of (result.sources || [])) {
+      src.breaches?.forEach(b => {
+        if (b.BreachDate && /^\d{4}/.test(b.BreachDate)) timeline.push({ date: b.BreachDate.substring(0, 10), name: b.Name, count: b.PwnCount });
+      });
+    }
+    timeline.sort((a2, b2) => a2.date.localeCompare(b2.date));
+
+    let html = `
+      <div style="max-width:720px;margin:24px auto 0;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="source-card" style="padding:18px;">
+          <p class="section-title">🎯 Personal Risk Score</p>
+          <div style="text-align:center;margin:10px 0;">
+            <span style="font-family:var(--mono);font-size:3rem;font-weight:700;color:${score >= 70 ? 'var(--danger)' : score >= 40 ? 'var(--warning)' : 'var(--success)'};text-shadow:0 0 15px currentColor;">${score}</span>
+            <span style="color:var(--muted);">/100</span>
+          </div>
+          ${recs.map(r => `<div style="font-size:0.78rem;color:var(--muted);margin-bottom:5px;">${r}</div>`).join('')}
+        </div>
+        <div class="source-card" style="padding:18px;">
+          <p class="section-title">🕸️ Identity Graph</p>
+          <canvas id="identityGraphCanvas" width="300" height="200" style="width:100%;"></canvas>
+        </div>
+      </div>
+      <div style="max-width:720px;margin:16px auto 0;" class="source-card">
+        <div style="padding:18px;">
+          <p class="section-title">📅 Timeline Kebocoran</p>
+          ${timeline.length ? timeline.map(t => `
+            <div class="breach-item">
+              <div class="breach-name">🔓 ${t.name}</div>
+              <div class="breach-date">${t.date}${t.count ? ` · ${Number(t.count).toLocaleString()} akun` : ''}</div>
+            </div>`).join('')
+          : '<div class="empty-result">Tidak ada tanggal breach spesifik</div>'}
+        </div>
+      </div>`;
+
+    // Tombol aksi
+    html += `
+      <div style="max-width:720px;margin:16px auto 0;display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-del" onclick="aiSummarize()" style="background:rgba(124,58,237,0.15);border-color:#a78bfa;color:#a78bfa;padding:9px 18px;">🤖 AI Summary</button>
+        <button class="btn-del" onclick="shareLastResult()" style="background:rgba(0,255,65,0.12);border-color:var(--success);color:var(--success);padding:9px 18px;">🔗 Share Read-only</button>
+      </div>`;
+
+    el.insertAdjacentHTML('beforeend', html);
+
+    // Gambar identity graph
+    drawIdentityGraph(el.querySelector('#identityGraphCanvas'), result);
+  }
+
+  function drawIdentityGraph(canvas, result) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#030803';
+    ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+
+    const entities = [];
+    if (result.query) entities.push({ label: String(result.query).split('@')[0].substring(0, 14), type: 'target' });
+    for (const src of (result.sources || [])) {
+      if (src.status !== 'success') continue;
+      src.breaches?.slice(0, 3).forEach(b => entities.push({ label: String(b.Name).substring(0, 14), type: 'breach' }));
+      src.rawData?.slice(0, 4).forEach(rd => entities.push({ label: String(rd.context).split('—')[0].trim().substring(0, 14), type: 'platform' }));
+      if (src.found_count > 0) entities.push({ label: src.source, type: 'platform' });
+    }
+    const uniq = entities.slice(0, 11);
+
+    // garis
+    ctx.strokeStyle = 'rgba(0,255,65,0.25)';
+    uniq.forEach((_, i) => {
+      const ang = (i / Math.max(uniq.length - 1, 1)) * Math.PI * 2;
+      ctx.beginPath(); ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang) * (W / 2 - 45), cy + Math.sin(ang) * (H / 2 - 28));
+      ctx.stroke();
+    });
+    // node satelit
+    uniq.forEach((e, i) => {
+      const ang = (i / Math.max(uniq.length - 1, 1)) * Math.PI * 2;
+      const x = cx + Math.cos(ang) * (W / 2 - 45), y = cy + Math.sin(ang) * (H / 2 - 28);
+      ctx.fillStyle = e.type === 'breach' ? '#ff2222' : e.type === 'platform' ? '#00ccff' : '#ffb000';
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c8e6c9'; ctx.font = '9px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(e.label, x, y + 16);
+    });
+    // pusat
+    ctx.fillStyle = '#00ff41';
+    ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#00ff41'; ctx.font = 'bold 10px monospace';
+    ctx.fillText('TARGET', cx, cy - 14);
+  }
 
   // ---- EXPORT REPORT ----
   function downloadReport() {

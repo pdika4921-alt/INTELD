@@ -222,15 +222,17 @@ app.get('/api/search', async (req, res) => {
 
   try {
     const results = await runIntelligence(query.trim(), searchType);
-    
-    // Simpan ke history + result_json untuk riwayat klik-able
-    db.run(
-      `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, result_json) VALUES (?, ?, ?, ?, ?, ?)`,
-      [query.trim(), searchType, JSON.stringify(results.summary), results.summary.total_breaches || 0, results.summary.risk_level || 'SAFE', JSON.stringify(results)],
-      (err) => { if (err) console.error('History save error:', err); }
-    );
 
-    res.json({ success: true, data: results });
+    // Simpan ke history + result_json untuk riwayat klik-able (tunggu selesai agar ID terkirim)
+    const historyId = await new Promise((resolve) => {
+      db.run(
+        `INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, result_json) VALUES (?, ?, ?, ?, ?, ?)`,
+        [query.trim(), searchType, JSON.stringify(results.summary), results.summary.total_breaches || 0, results.summary.risk_level || 'SAFE', JSON.stringify(results)],
+        function (err) { if (err) { console.error('History save error:', err); resolve(null); } else resolve(this.lastID); }
+      );
+    });
+
+    res.json({ success: true, data: results, history_id: historyId });
   } catch (err) {
     console.error('Search error:', err);
     res.status(500).json({ error: 'Terjadi kesalahan pada server pencarian' });
@@ -679,6 +681,265 @@ app.post('/api/batch', async (req, res) => {
   });
 });
 
+// =============================================
+// TOOL SUITE: Email Finder, Password Breach, IP Lookup, Username Generator
+// =============================================
+
+// 1. Email Finder — generate variasi email dari nama + domain, verifikasi MX
+app.post('/api/tools/email-finder', requireAuth, async (req, res) => {
+  const { name, domain } = req.body || {};
+  if (!name || !domain) return res.status(400).json({ error: 'Nama dan domain wajib diisi' });
+
+  const clean = (s) => s.toLowerCase().trim().replace(/[^a-z\s]/g, '');
+  const parts = clean(name).split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return res.status(400).json({ error: 'Nama tidak valid' });
+  const [first, ...rest] = parts;
+  const last = rest[parts.length - 2] || '';
+  const f = first[0], l = last ? last[0] : '';
+
+  // Pola umum email korporat diurut dari paling umum
+  const patterns = [
+    { p: `${first}`, label: 'first' },
+    { p: `${first}.${last}`, label: 'first.last' },
+    { p: `${f}${last}`, label: 'flast' },
+    { p: `${f}${rest.join('')}`, label: 'ffirst...all' },
+    { p: `${first}${l}`, label: 'firstl' },
+    { p: `${first}_${last}`, label: 'first_last' },
+    { p: `${first}${last}`, label: 'firstlast' },
+    { p: `${f}.${last}`, label: 'f.last' },
+    last ? { p: `${last}${f}`, label: 'lastf' } : null,
+    last ? { p: `${first}.${rest.join('.')}` , label: 'first.rest.full' } : null
+  ].filter(Boolean);
+
+  // Verifikasi MX domain
+  let mxValid = false, mxRecords = [];
+  try {
+    const mx = await require('dns').promises.resolveMx(domain.trim());
+    mxValid = mx.length > 0;
+    mxRecords = mx.map(m => m.exchange).slice(0, 3);
+  } catch {}
+
+  const seen = new Set();
+  const candidates = patterns
+    .map(p => `${p.p}@${domain.trim().toLowerCase()}`)
+    .filter(e => { if (seen.has(e)) return false; seen.add(e); return true; })
+    .slice(0, 10);
+
+  res.json({
+    success: true,
+    data: {
+      domain,
+      mx_valid: mxValid,
+      mx_records: mxRecords,
+      candidates: patterns.slice(0, 10).map((p, i) => ({
+        email: `${p.p}@${domain.trim().toLowerCase()}`,
+        pattern: p.label,
+        rank: i + 1,
+        note: mxValid ? 'Domain aktif — pola umum' : '⚠️ Domain tanpa mail server'
+      }))
+    }
+  });
+});
+
+// 2. Password Breach — cek siapa saja pakai password ini (LeakCheck Pro)
+app.post('/api/tools/password-breach', requireAuth, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password.length < 4) return res.status(400).json({ error: 'Password minimal 4 karakter' });
+  const key = process.env.LEAKCHECK_API_KEY;
+  if (!key || key.includes('your_') || key === 'dummy') {
+    return res.status(400).json({ error: 'Fitur butuh LEAKCHECK_API_KEY aktif (berbayar)' });
+  }
+  try {
+    const r = await axios.get('https://leakcheck.io/api/v2/query', {
+      params: { password },
+      headers: { 'X-API-KEY': key },
+      timeout: 20000
+    });
+    const d = r.data;
+    res.json({
+      success: true,
+      data: {
+        found: !!d.found,
+        count: d.count || 0,
+        results: (d.result || []).slice(0, 20).map(item => ({
+          source: item.source,
+          date: item.date,
+          fields: Object.keys(item.fields || {}).join(', ')
+        }))
+      }
+    });
+  } catch (e) {
+    const msg = e.response?.data?.error || e.message;
+    res.status(502).json({ error: `LeakCheck: ${msg}` });
+  }
+});
+
+// 3. IP Lookup — lokasi, ISP, deteksi proxy/VPN/hosting (ip-api.com gratis)
+app.get('/api/tools/ip-lookup', requireAuth, async (req, res) => {
+  const { ip } = req.query;
+  if (!ip || !/^[\d.:a-fA-F]+$/.test(ip)) return res.status(400).json({ error: 'IP tidak valid' });
+  try {
+    const r = await axios.get(`http://ip-api.com/json/${encodeURIComponent(ip)}`, {
+      params: { fields: 'status,country,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query,message' },
+      timeout: 10000
+    });
+    if (r.data.status !== 'success') return res.status(404).json({ error: r.data.message || 'IP tidak ditemukan' });
+    const out = {
+      ip: r.data.query,
+      location: { country: r.data.country, region: r.data.regionName, city: r.data.city, zip: r.data.zip, lat: r.data.lat, lon: r.data.lon, timezone: r.data.timezone },
+      network: { isp: r.data.isp, org: r.data.org, as: r.data.as },
+      flags: { mobile: !!r.data.mobile, proxy_vpn: !!r.data.proxy, hosting_dc: !!r.data.hosting },
+      map_url: `https://www.google.com/maps?q=${r.data.lat},${r.data.lon}`
+    };
+    // Shodan tambahan jika ada key
+    const shodanKey = process.env.SHODAN_API_KEY;
+    if (shodanKey && !shodanKey.includes('your_')) {
+      try {
+        const sh = await axios.get(`https://api.shodan.io/shodan/host/${ip}?key=${shodanKey}`, { timeout: 10000 });
+        out.open_ports = (sh.data.data || []).flatMap(x => x.port || []).filter(Boolean);
+        out.vulns = sh.data.vulns ? Object.keys(sh.data.vulns).slice(0, 10) : [];
+        out.hostnames = sh.data.hostnames || [];
+      } catch {}
+    }
+    res.json({ success: true, data: out });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 4. Username Generator — dari nama asli → kemungkinan handle
+app.post('/api/tools/username-generate', requireAuth, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Nama wajib diisi' });
+  const parts = name.toLowerCase().trim().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
+  const [first, ...rest] = parts;
+  const last = rest[rest.length - 1] || '';
+  const f = first[0], l = last[0];
+  const seps = ['', '.', '_', '-'];
+  const bases = new Set();
+  for (const sep of seps) {
+    if (last) { bases.add(`${first}${sep}${last}`); bases.add(`${f}${sep}${last}`); bases.add(`${first}${sep}${l}`); }
+    bases.add(first);
+    if (rest.length > 1) { bases.add(`${first}${sep}${rest.join('')}`); }
+  }
+  const suffixes = ['', '01', '12', '23', '99', '_id', 'id', 'official', 'real', '07'];
+  const handles = [];
+  const seen = new Set();
+  outer:
+  for (const b of [...bases]) {
+    for (const s of suffixes) {
+      const h = `${b}${s}`;
+      if (!seen.has(h) && h.length >= 3 && h.length <= 25) { seen.add(h); handles.push(h); }
+      if (handles.length >= 30) break outer;
+    }
+  }
+  res.json({ success: true, data: { name, candidates: handles, tip: 'Scan tiap kandidat via tab @USER untuk cek platform mana yang dipakai target' } });
+});
+
+// 5. Compare dua target dari riwayat
+app.post('/api/tools/compare', requireAuth, async (req, res) => {
+  const { idA, idB } = req.body || {};
+  const parse = (id) => {
+    const row = db.raw.prepare(`SELECT * FROM search_history WHERE id = ?`).get(id);
+    if (!row) return null;
+    let full = null;
+    try { full = row.result_json ? JSON.parse(row.result_json) : null; } catch {}
+    return { id: row.id, query: row.query, risk: row.risk_level, breaches: row.breach_count, full };
+  };
+  const a = parse(idA), b = parse(idB);
+  if (!a || !b) return res.status(404).json({ error: 'Satu atau kedua riwayat tidak ditemukan / tidak punya detail lengkap' });
+
+  const extract = (x) => {
+    const platforms = new Set(), dataClasses = new Set(), breachNames = new Set();
+    for (const src of (x.full?.sources || [])) {
+      src.breaches?.forEach(br => { breachNames.add(br.Name); (br.DataClasses || []).forEach(dc => dataClasses.add(dc)); });
+      src.rawData?.forEach(rd => platforms.add(String(rd.context).split('—')[0].trim()));
+    }
+    return { platforms: [...platforms], dataClasses: [...dataClasses], breachNames: [...breachNames] };
+  };
+  const ea = extract(a), eb = extract(b);
+  const same = ea.breachNames.filter(x => eb.breachNames.includes(x));
+  const onlyA = ea.breachNames.filter(x => !eb.breachNames.includes(x));
+  const onlyB = eb.breachNames.filter(x => !ea.breachNames.includes(x));
+
+  res.json({
+    success: true,
+    data: {
+      a: { id: a.id, query: a.query, risk: a.risk }, b: { id: b.id, query: b.query, risk: b.risk },
+      shared_breaches: same, only_a: onlyA, only_b: onlyB,
+      shared_data_classes: ea.dataClasses.filter(x => eb.dataClasses.includes(x)),
+      verdict: same.length >= 2 ? 'Kemungkinan BESAR orang yang sama (≥2 breach identik)' :
+               same.length === 1 ? 'Mungkin orang yang sama (1 breach sama)' : 'Tidak ada indikasi kuat keduanya orang sama'
+    }
+  });
+});
+
+// 6. AI Summary — butuh OPENAI_API_KEY (kompatibel OpenAI/DeepSeek/dll)
+app.post('/api/tools/ai-summary', requireAuth, async (req, res) => {
+  const { result } = req.body || {};
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return res.status(400).json({ error: 'Set OPENAI_API_KEY di .env untuk mengaktifkan AI summary' });
+  if (!result) return res.status(400).json({ error: 'Data hasil pencarian wajib' });
+  try {
+    const brief = JSON.stringify(result).substring(0, 6000);
+    const base = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const r = await axios.post(`${base}/chat/completions`, {
+      model,
+      messages: [
+        { role: 'system', content: 'Kamu analis OSINT. Ringkas temuan dalam bahasa Indonesia, maksimal 150 kata, format bullet. Sebutkan tingkat risiko dan rekomendasi tindakan.' },
+        { role: 'user', content: `Ringkas hasil investigasi berikut:\n${brief}` }
+      ],
+      max_tokens: 350
+    }, { headers: { Authorization: `Bearer ${key}` }, timeout: 30000 });
+    res.json({ success: true, data: { summary: r.data.choices[0].message.content } });
+  } catch (e) {
+    res.status(502).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// 7. Share link read-only dengan expiry
+app.post('/api/share/:historyId', requireAuth, (req, res) => {
+  const days = Math.min(parseInt(req.body?.days) || 7, 30);
+  const row = db.raw.prepare(`SELECT result_json FROM search_history WHERE id = ?`).get(req.params.historyId);
+  if (!row || !row.result_json) return res.status(404).json({ error: 'Riwayat tidak ditemukan / tanpa detail' });
+  const token = crypto.randomBytes(16).toString('hex');
+  db.raw.prepare(`INSERT INTO share_links (token, history_id, expires_at, created_at) VALUES (?, ?, ?, ?)`)
+    .run(token, req.params.historyId, new Date(Date.now() + days * 86400000).toISOString(), new Date().toISOString());
+  res.json({ success: true, data: { url: `/share/${token}`, expires_days: days } });
+});
+
+app.get('/share/:token', async (req, res) => {
+  try {
+    const link = db.raw.prepare(`SELECT * FROM share_links WHERE token = ? AND expires_at > ?`).get(req.params.token, new Date().toISOString());
+    if (!link) return res.status(404).send('Link expired atau tidak valid');
+    const row = db.raw.prepare(`SELECT result_json, query, created_at FROM search_history WHERE id = ?`).get(link.history_id);
+    const result = JSON.parse(row.result_json);
+    const s = result.summary || {};
+    const srcList = (result.sources || []).map(x =>
+      `<div style="background:#0a120a;border:1px solid #1a3320;border-radius:10px;padding:14px 18px;margin-bottom:12px;">
+        <strong style="color:#00ff41;font-family:monospace;">${x.source}</strong>
+        <span style="float:right;color:${x.status === 'success' ? '#00ff41' : '#ffb000'};font-size:0.75rem;">${(x.status || '').toUpperCase()}</span>
+        ${x.breaches ? `<div style="margin-top:8px;color:#c8e6c9;font-size:0.85rem;">${x.breaches.length} breach ditemukan</div>` : ''}
+        ${x.found !== undefined ? `<div style="margin-top:8px;color:#c8e6c9;font-size:0.85rem;">${x.found} temuan</div>` : ''}
+      </div>`).join('');
+    res.send(`<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Laporan Berbagi — BREACH INTEL</title></head>
+      <body style="background:#030803;color:#c8e6c9;font-family:sans-serif;max-width:760px;margin:0 auto;padding:32px 20px;">
+        <h1 style="color:#00ff41;font-family:monospace;letter-spacing:3px;">🔍 BREACH INTEL</h1>
+        <p style="color:#4a7a52;font-size:0.85rem;">Laporan read-only · dibuat: ${new Date(row.created_at).toLocaleString('id-ID')} · berlaku s.d. ${new Date(link.expires_at).toLocaleDateString('id-ID')}</p>
+        <h2 style="color:#fff;font-size:1rem;">Target: ${row.query}</h2>
+        <p>Risiko: <strong style="color:#ff5555;">${s.risk_level || '-'}</strong> · Breach/temuan: <strong>${s.total_breaches ?? 0}</strong></p>
+        ${s.data_classes?.length ? `<p style="font-size:0.85rem;">Data bocor: ${s.data_classes.join(', ')}</p>` : ''}
+        <hr style="border-color:#1a3320;margin:20px 0;">
+        ${srcList}
+        <p style="color:#4a7a52;font-size:0.7rem;margin-top:30px;">Dihasilkan oleh BREACH INTEL — gunakan hanya untuk keperluan sah.</p>
+      </body></html>`);
+  } catch (e) {
+    res.status(500).send('Error: ' + e.message);
+  }
+});
+
 // API: Jalankan Multi-Parameter Cross-Search (v2 — pakai semua sumber)
 app.post('/api/cross-search', async (req, res) => {
   const { email, phone, name, location } = req.body;
@@ -940,14 +1201,30 @@ async function checkWatchlist() {
 
       if (newCount > oldCount && oldCount > -1) {
         alerts++;
-        await sendTelegram(
+        const msgText =
           `🚨 <b>BREACH ALERT — BREACH INTEL</b>\n\n` +
           `Target: <code>${item.query}</code> (${item.label || '-'})\n` +
           `Breach baru terdeteksi: ${oldCount} → <b>${newCount}</b>\n` +
           `Risiko: <b>${results.summary.risk_level}</b>\n` +
           (results.summary.data_classes?.length ? `Data bocor: ${results.summary.data_classes.slice(0, 5).join(', ')}\n` : '') +
-          `\n⏰ ${new Date().toLocaleString('id-ID')}`
-        );
+          `\n⏰ ${new Date().toLocaleString('id-ID')}`;
+        await sendTelegram(msgText);
+        // Webhook eksternal (n8n/Zapier/Slack-compatible)
+        const hookUrl = process.env.WATCHLIST_WEBHOOK_URL;
+        if (hookUrl) {
+          try {
+            await axios.post(hookUrl, {
+              event: 'breach_alert',
+              target: item.query,
+              label: item.label,
+              old_count: oldCount,
+              new_count: newCount,
+              risk: results.summary.risk_level,
+              data_classes: results.summary.data_classes || [],
+              timestamp: new Date().toISOString()
+            }, { timeout: 10000 });
+          } catch (e2) { console.warn('Webhook gagal:', e2.message); }
+        }
       }
     } catch (e) {
       console.warn(`Watchlist check gagal untuk ${item.query}:`, e.message);
