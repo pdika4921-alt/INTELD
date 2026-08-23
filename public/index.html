@@ -1980,6 +1980,17 @@
       </div>
     `;
 
+    // Peringatan konfigurasi server (key belum diset)
+    if (data.config_warnings?.length > 0) {
+      html += `
+        <div class="error-box" style="margin-bottom:20px; border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.06); color: var(--warning);">
+          <strong>⚙️ KONFIGURASI SERVER BELUM LENGKAP</strong><br><br>
+          ${data.config_warnings.map(w => '• ' + w).join('<br>')}
+          <br><br>Tambahkan Environment Variables di dashboard hosting kamu, lalu restart server.
+        </div>
+      `;
+    }
+
     // Peringatan jika semua query Serper gagal (rate limit/kuota habis)
     if (data.summary?.serper_queries_ok === 0 && data.summary?.total_records === 0) {
       html += `

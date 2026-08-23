@@ -279,8 +279,23 @@ app.get('/api/phone-lookup', async (req, res) => {
       sources: [],
       owner_info: null,
       confidence: 0,
-      summary: {}
+      summary: {},
+      config_warnings: []
     };
+
+    // Diagnostik: key mana yang tidak tersedia di server ini
+    const envChecks = [
+      ['NUMVERIFY_API_KEY', 'Info carrier & lokasi terdaftar'],
+      ['ABSTRACTAPI_PHONE_KEY', 'Detail operator ganda'],
+      ['SERPER_API_KEY', 'Pencarian jejak publik Google'],
+      ['LEAKCHECK_API_KEY', 'Cek breach nomor telepon']
+    ];
+    for (const [key, desc] of envChecks) {
+      const val = process.env[key];
+      if (!val || val.includes('your_')) {
+        lookupResults.config_warnings.push(`${key} belum diset — fitur "${desc}" nonaktif`);
+      }
+    }
 
     // ============================================
     // 1 & 2. NumVerify + AbstractAPI (paralel)

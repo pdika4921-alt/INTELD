@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: breach-intel
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /login.html
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+      # API Keys OSINT (isi manual di dashboard Render)
+      - key: SERPER_API_KEY
+        sync: false
+      - key: NUMVERIFY_API_KEY
+        sync: false
+      - key: ABSTRACTAPI_PHONE_KEY
+        sync: false
+      - key: HIBP_API_KEY
+        sync: false
+      - key: LEAKCHECK_API_KEY
+        sync: false
+      - key: EMAILREP_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
