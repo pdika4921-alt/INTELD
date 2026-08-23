@@ -20,6 +20,16 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Verifikasi versi Java
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          javac -version
+          if ! java -version 2>&1 | grep -q 'version "21'; then
+            echo "::error::Java yang aktif BUKAN versi 21!"
+            exit 1
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
