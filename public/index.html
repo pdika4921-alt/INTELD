@@ -1645,16 +1645,30 @@
 
   // ---- RENDER SOURCE BODY ----
   function renderSourceBody(src) {
+    // Helper: blok manual links + keterangan platform tertutup
+    function renderManualLinks(src) {
+      let html = `
+        <div style="margin-top: 12px; padding: 12px 14px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;">
+          <p style="font-size: 0.72rem; color: var(--warning); font-family: var(--mono); margin-bottom: 8px;">🔗 CEK MANUAL — PLATFORM ANTI-BOT (KLIK LANGSUNG):</p>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            ${src.manual_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="data-tag" style="text-decoration:none; padding:7px 14px; cursor:pointer; color:var(--accent); border-color:rgba(0,255,65,0.35);">${l.name} ↗</a>`).join('')}
+          </div>
+        </div>`;
+      if (src.no_username_check?.length) {
+        html += `
+        <div style="margin-top: 10px; padding: 12px 14px; background: rgba(100,116,139,0.08); border: 1px solid rgba(100,116,139,0.3); border-radius: 8px;">
+          <p style="font-size: 0.72rem; color: var(--muted); font-family: var(--mono); margin-bottom: 6px;">🔒 TIDAK BISA DICEK VIA USERNAME:</p>
+          ${src.no_username_check.map(x => `<div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 4px;"><strong style="color: var(--text);">${x.cat}:</strong> ${x.items}</div>`).join('')}
+        </div>`;
+      }
+      return html;
+    }
+
     // 0. Username OSINT tanpa hasil — tetap tampilkan manual links
     if (src.source === 'Username OSINT' && src.manual_links && (!src.rawData || src.rawData.length === 0)) {
       return `
         <div class="empty-result">Tidak ditemukan akun aktif di ${src.stats?.total_checked || 'semua'} platform yang diprobe</div>
-        <div style="margin-top: 12px; padding: 12px 14px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;">
-          <p style="font-size: 0.72rem; color: var(--warning); font-family: var(--mono); margin-bottom: 8px;">🔗 CEK MANUAL (KLIK LANGSUNG):</p>
-          <div style="display:flex; flex-wrap:wrap; gap:8px;">
-            ${src.manual_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="data-tag" style="text-decoration:none; padding:7px 14px; cursor:pointer; color:var(--accent); border-color:rgba(0,255,65,0.35);">${l.name} ↗</a>`).join('')}
-          </div>
-        </div>
+        ${renderManualLinks(src)}
       `;
     }
 
@@ -1711,14 +1725,7 @@
 
       // Manual check links (platform anti-bot seperti Facebook/Snapchat)
       if (src.manual_links?.length > 0) {
-        tableHtml += `
-          <div style="margin-top: 14px; padding: 12px 14px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px;">
-            <p style="font-size: 0.72rem; color: var(--warning); font-family: var(--mono); margin-bottom: 8px;">🔗 PLATFORM ANTI-BOT — CEK MANUAL (KLIK LANGSUNG):</p>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">
-              ${src.manual_links.map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="data-tag" style="text-decoration:none; padding:7px 14px; cursor:pointer; color:var(--accent); border-color:rgba(0,255,65,0.35);">${l.name} ↗</a>`).join('')}
-            </div>
-          </div>
-        `;
+        tableHtml += renderManualLinks(src);
       }
 
       return tableHtml;

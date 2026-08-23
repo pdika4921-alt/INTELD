@@ -544,7 +544,29 @@ async function checkUsername(username) {
         // Profil ada jika og:title berisi nama asli (bukan format "Telegram: Contact @user")
         return m && m[1] && !m[1].startsWith('Telegram:');
       } },
+    { name: 'YouTube', url: `https://www.youtube.com/@${u}`,
+      check: r => r.status === 200 }
   ];
+
+  // === ROBLOX (API khusus POST) ===
+  try {
+    const rr = await axios.post('https://users.roblox.com/v1/usernames/users',
+      { usernames: [username], excludeBannedUsers: false },
+      { timeout: 8000, headers: { 'User-Agent': BROWSER_UA, 'Content-Type': 'application/json' } });
+    if (rr.status === 200 && Array.isArray(rr.data?.data) && rr.data.data.length > 0) {
+      const rb = rr.data.data[0];
+      found.push({
+        context: `Roblox — profil ditemukan (${rb.name}${rb.displayName && rb.displayName !== rb.name ? ' / ' + rb.displayName : ''})`,
+        date: 'Username Match',
+        tags: ['OSINT', 'Account Found'],
+        details: {
+          'Platform': 'Roblox',
+          'User ID': String(rb.id),
+          'URL_Profile': `https://www.roblox.com/users/${rb.id}/profile`
+        }
+      });
+    }
+  } catch { /* abaikan */ }
 
   // Probe paralel per batch (5 sekaligus agar tidak diblokir)
   for (let i = 0; i < sites.length; i += 5) {
@@ -599,7 +621,20 @@ async function checkUsername(username) {
       { name: '☕ Ko-fi', url: `https://ko-fi.com/${username}` },
       { name: '🎮 PSNProfiles', url: `https://psnprofiles.com/${username}` },
       { name: '💬 Hacker News', url: `https://news.ycombinator.com/user?id=${username}` },
-      { name: '🎬 Vimeo', url: `https://vimeo.com/${username}` }
+      { name: '🎬 Vimeo', url: `https://vimeo.com/${username}` },
+      { name: '📝 Medium', url: `https://medium.com/@${username}` },
+      { name: '❓ Quora', url: `https://www.quora.com/profile/${username}` },
+      { name: '🎨 Canva', url: `https://www.canva.com/${username}/` },
+      { name: '🦉 Duolingo', url: `https://www.duolingo.com/profile/${username}` },
+      { name: '🏷️ eBay', url: `https://www.ebay.com/usr/${username}` },
+      { name: '💼 LinkedIn', url: `https://www.linkedin.com/in/${username}` }
+    ],
+    // Platform yang TIDAK BISA dicek via username (pakai nomor HP / tertutup)
+    no_username_check: [
+      { cat: 'Pesan & Chat', items: 'WhatsApp, LINE, WeChat, KakaoTalk, Signal, Viber, IMO, MiChat — pakai nomor HP, tidak ada profil username publik' },
+      { cat: 'E-Wallet & Finansial', items: 'GoPay, OVO, DANA, LinkAja, ShopeePay, PayPal, Wise, Jenius — cek nama via fitur transfer & lihat nama penerima di masing-masing app (butuh nomor HP)' },
+      { cat: 'E-Commerce Indonesia', items: 'Shopee, Tokopedia, Lazada, Bukalapak, Blibli — cari via nama toko di app (username seller tidak ekspos publik)' },
+      { cat: 'Game Lainnya', items: 'Epic Games, Moonton (ML), HoYoverse — pakai ID game, bukan username' }
     ]
   };
 }
