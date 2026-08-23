@@ -1,113 +1,133 @@
-const fs = require('fs');
+// SQLite via modul bawaan Node.js 22+ (tanpa dependensi native)
+const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
+const fs = require('fs');
 
 const DATA_DIR = path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'breach_intel.json');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Buat folder & file jika belum ada
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify({
-    search_history: [],
-    breach_results: [],
-    watchlist: []
-  }));
+const sqlite = new DatabaseSync(path.join(DATA_DIR, 'breach_intel.db'));
+sqlite.exec('PRAGMA journal_mode = WAL;');
+
+// Migrasi skema
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS search_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    query_type TEXT NOT NULL,
+    result_summary TEXT,
+    breach_count INTEGER DEFAULT 0,
+    risk_level TEXT DEFAULT 'SAFE',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS breach_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id INTEGER,
+    source TEXT,
+    breach_name TEXT,
+    breach_date TEXT,
+    data_classes TEXT,
+    description TEXT,
+    is_verified INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    query_type TEXT NOT NULL,
+    label TEXT,
+    last_checked TEXT,
+    last_breach_count INTEGER DEFAULT 0,
+    last_risk_level TEXT DEFAULT 'SAFE',
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+`);
+
+// Migrasi otomatis dari JSON lama (sekali saja)
+const OLD_JSON = path.join(DATA_DIR, 'breach_intel.json');
+try {
+  if (fs.existsSync(OLD_JSON)) {
+    const old = JSON.parse(fs.readFileSync(OLD_JSON, 'utf8'));
+    const insHist = sqlite.prepare(`INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+    for (const r of (old.search_history || [])) {
+      insHist.run(r.query, r.query_type, r.result_summary || '', r.breach_count || 0, r.risk_level || 'SAFE', r.created_at || new Date().toISOString());
+    }
+    const insWatch = sqlite.prepare(`INSERT INTO watchlist (query, query_type, label, is_active, created_at) VALUES (?, ?, ?, ?, ?)`);
+    for (const w of (old.watchlist || [])) {
+      insWatch.run(w.query, w.query_type, w.label || w.query, w.is_active ?? 1, w.created_at || new Date().toISOString());
+    }
+    fs.renameSync(OLD_JSON, OLD_JSON + '.migrated');
+    console.log('✅ Migrasi data JSON → SQLite selesai (backup: breach_intel.json.migrated)');
+  }
+} catch (e) {
+  console.warn('⚠️ Migrasi JSON dilewati:', e.message);
 }
 
-// Load & save
-function load() {
-  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-}
-function save(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
-
-// Simulasi interface sqlite3 agar server.js tidak perlu banyak diubah
+// Interface kompatibel dengan server.js (callback style)
 const db = {
   run(sql, params, cb) {
     if (typeof params === 'function') { cb = params; params = []; }
     try {
-      const data = load();
-      // INSERT search_history
+      let info;
       if (sql.includes('INSERT INTO search_history')) {
-        const id = Date.now();
-        data.search_history.push({
-          id, query: params[0], query_type: params[1],
-          result_summary: params[2], breach_count: params[3],
-          risk_level: params[4], created_at: new Date().toISOString()
-        });
-        save(data);
-        if (cb) cb.call({ lastID: id }, null);
+        info = sqlite.prepare(`INSERT INTO search_history (query, query_type, result_summary, breach_count, risk_level, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+          .run(params[0], params[1], String(params[2] || ''), params[3], params[4], new Date().toISOString());
       }
-      // INSERT breach_results
       else if (sql.includes('INSERT INTO breach_results')) {
-        const id = Date.now() + Math.random();
-        data.breach_results.push({
-          id, search_id: params[0], source: params[1],
-          breach_name: params[2], breach_date: params[3],
-          data_classes: params[4], description: params[5],
-          is_verified: params[6], created_at: new Date().toISOString()
-        });
-        save(data);
-        if (cb) cb.call({ lastID: id }, null);
+        info = sqlite.prepare(`INSERT INTO breach_results (search_id, source, breach_name, breach_date, data_classes, description, is_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(params[0], params[1], params[2], params[3], params[4], params[5], params[6] ? 1 : 0, new Date().toISOString());
       }
-      // INSERT watchlist
       else if (sql.includes('INSERT INTO watchlist')) {
-        const id = Date.now();
-        data.watchlist.push({
-          id, query: params[0], query_type: params[1],
-          label: params[2], last_checked: null,
-          last_breach_count: 0, is_active: 1,
-          created_at: new Date().toISOString()
-        });
-        save(data);
-        if (cb) cb.call({ lastID: id }, null);
+        info = sqlite.prepare(`INSERT INTO watchlist (query, query_type, label, created_at) VALUES (?, ?, ?, ?)`)
+          .run(params[0], params[1], params[2] || params[0], new Date().toISOString());
       }
-      // UPDATE watchlist (hapus / nonaktifkan)
-      else if (sql.includes('UPDATE watchlist')) {
-        const id = params[params.length - 1];
-        const d = load();
-        d.watchlist = d.watchlist.map(w =>
-          w.id == id ? { ...w, is_active: 0 } : w
-        );
-        save(d);
-        if (cb) cb(null);
+      else if (sql.includes('UPDATE watchlist SET is_active = 0')) {
+        info = sqlite.prepare(`UPDATE watchlist SET is_active = 0 WHERE id = ?`).run(params[params.length - 1]);
       }
-      else { if (cb) cb(null); }
-    } catch(e) { if (cb) cb(e); }
+      else if (sql.includes('UPDATE watchlist SET last_checked')) {
+        info = sqlite.prepare(`UPDATE watchlist SET last_checked = ?, last_breach_count = ?, last_risk_level = ? WHERE id = ?`)
+          .run(params[0], params[1], params[2], params[3]);
+      }
+      else { info = { changes: 0, lastInsertRowid: null }; }
+
+      if (cb) cb.call({ lastID: Number(info.lastInsertRowid) }, null);
+    } catch (e) { if (cb) cb(e); }
   },
 
   get(sql, params, cb) {
     if (typeof params === 'function') { cb = params; params = []; }
     try {
-      const data = load();
-      if (sql.includes('search_history')) {
-        const total = data.search_history.length;
-        const breaches = data.search_history.reduce((s,r) => s + (r.breach_count||0), 0);
-        const critical = data.search_history.filter(r=>r.risk_level==='CRITICAL').length;
-        const high = data.search_history.filter(r=>r.risk_level==='HIGH').length;
-        const safe = data.search_history.filter(r=>r.risk_level==='SAFE').length;
-        cb(null, { total_searches: total, total_breaches_found: breaches,
-          critical_count: critical, high_count: high, safe_count: safe });
+      if (sql.includes('COUNT(*)') && sql.includes('search_history')) {
+        const row = sqlite.prepare(`
+          SELECT 
+            COUNT(*) as total_searches,
+            COALESCE(SUM(breach_count), 0) as total_breaches_found,
+            SUM(CASE WHEN risk_level = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count,
+            SUM(CASE WHEN risk_level = 'HIGH' THEN 1 ELSE 0 END) as high_count,
+            SUM(CASE WHEN risk_level = 'SAFE' THEN 1 ELSE 0 END) as safe_count
+          FROM search_history
+        `).get();
+        cb(null, row);
       } else { cb(null, null); }
-    } catch(e) { cb(e); }
+    } catch (e) { cb(e); }
   },
 
   all(sql, params, cb) {
     if (typeof params === 'function') { cb = params; params = []; }
     try {
-      const data = load();
-      if (sql.includes('watchlist')) {
-        cb(null, data.watchlist.filter(w => w.is_active === 1));
+      if (sql.includes('watchlist') && sql.includes('is_active')) {
+        cb(null, sqlite.prepare(`SELECT * FROM watchlist WHERE is_active = 1 ORDER BY created_at DESC`).all());
       } else if (sql.includes('search_history')) {
-        cb(null, [...data.search_history].reverse().slice(0, 50));
+        const limit = typeof params[0] === 'number' ? params[0] : 50;
+        cb(null, sqlite.prepare(`SELECT * FROM search_history ORDER BY created_at DESC LIMIT ?`).all(limit));
       } else if (sql.includes('breach_results')) {
-        const id = params[0];
-        cb(null, data.breach_results.filter(r => r.search_id == id));
+        cb(null, sqlite.prepare(`SELECT * FROM breach_results WHERE search_id = ?`).all(params[0]));
       } else { cb(null, []); }
-    } catch(e) { cb(e, []); }
+    } catch (e) { cb(e, []); }
   },
 
+  raw: sqlite,
   serialize(fn) { fn(); }
 };
 

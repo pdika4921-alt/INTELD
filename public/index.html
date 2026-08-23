@@ -1,9 +1,15 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BREACH INTEL — Data Breach Intelligence Tool</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#030803">
+  <link rel="icon" type="image/png" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -132,6 +138,7 @@
       margin-bottom: 8px;
       background: linear-gradient(135deg, var(--accent), var(--accent2));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
@@ -146,42 +153,14 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 28px;
-      max-width: 700px;
+      max-width: 800px;
       margin: 0 auto;
-    }
-
-    .type-selector {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-
-    .type-btn {
-      padding: 10px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 0.8rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-align: center;
-    }
-
-    .type-btn .icon { display: block; font-size: 1.3rem; margin-bottom: 4px; }
-
-    .type-btn.active, .type-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      background: rgba(0, 212, 255, 0.05);
     }
 
     .input-group {
       display: flex;
       gap: 10px;
+      margin-top: 16px;
     }
 
     .input-group input {
@@ -406,6 +385,8 @@
     .badge.domain { background: rgba(124,58,237,0.15); color: #a78bfa; }
     .badge.phone { background: rgba(16,185,129,0.1); color: var(--success); }
     .badge.name { background: rgba(245,158,11,0.1); color: var(--warning); }
+    .badge.location { background: rgba(236,72,153,0.1); color: #ec4899; }
+    .badge.ttl { background: rgba(14,165,233,0.1); color: #0ea5e9; }
 
     .risk-pill {
       padding: 3px 10px;
@@ -447,19 +428,6 @@
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 1px;
-    }
-
-    .demo-notice {
-      background: rgba(245,158,11,0.08);
-      border: 1px solid rgba(245,158,11,0.3);
-      border-radius: 10px;
-      padding: 14px 18px;
-      font-size: 0.82rem;
-      color: var(--warning);
-      margin-bottom: 24px;
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
     }
 
     .info-grid {
@@ -548,9 +516,506 @@
       font-size: 0.85rem;
       margin-top: 20px;
     }
+
+    .raw-data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+    .raw-data-table th, .raw-data-table td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .raw-data-table tr.main-row {
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .raw-data-table tr.main-row:hover { background: var(--surface2); }
+    .raw-data-table tr.main-row td:first-child {
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .expand-icon {
+      display: inline-block;
+      transition: transform 0.3s;
+      margin-right: 8px;
+      font-size: 0.7rem;
+    }
+    .expanded .expand-icon { transform: rotate(90deg); }
+    .detail-row { display: none; background: rgba(0,0,0,0.2); }
+    .detail-row.show { display: table-row; }
+    .detail-content { padding: 16px !important; }
+    .raw-key-value {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+    .raw-key-value .k {
+      color: var(--muted);
+      text-transform: uppercase;
+      border-right: 1px solid var(--border);
+      padding-right: 10px;
+    }
+    .raw-key-value .v { color: var(--text); word-break: break-all; }
+    .raw-key-value .v.sensitive { color: var(--danger); font-weight: bold; }
   </style>
 </head>
 <body>
+
+<canvas id="matrixRain"></canvas>
+<div class="scanlines"></div>
+<div class="crt-vignette"></div>
+
+<style>
+  /* ============ HACKER TERMINAL THEME OVERRIDE ============ */
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --bg: #030803 !important;
+    --surface: #0a120a !important;
+    --surface2: #0f1a0f !important;
+    --border: #1a3320 !important;
+    --accent: #00ff41 !important;
+    --accent2: #00b32d !important;
+    --danger: #ff2222 !important;
+    --warning: #ffb000 !important;
+    --success: #00ff41 !important;
+    --text: #c8e6c9 !important;
+    --muted: #4a7a52 !important;
+    --mono: 'Share Tech Mono', 'Space Mono', monospace !important;
+  }
+
+  body {
+    background: radial-gradient(ellipse at 50% -20%, #0a1f0a 0%, var(--bg) 60%) !important;
+    font-family: var(--sans) !important;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  #matrixRain {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    z-index: 0;
+    opacity: 0.10;
+    pointer-events: none;
+  }
+
+  /* Scanlines CRT */
+  .scanlines {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 9998;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 2px,
+      rgba(0, 255, 65, 0.015) 3px,
+      rgba(0, 0, 0, 0.12) 4px
+    );
+    mix-blend-mode: overlay;
+  }
+
+  /* Vignette CRT */
+  .crt-vignette {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 9997;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  /* Semua konten utama di atas canvas */
+  header, .tabs, main { position: relative; z-index: 1; }
+
+  /* HEADER */
+  header {
+    background: rgba(6,14,6,0.92) !important;
+    border-bottom: 1px solid var(--border) !important;
+    box-shadow: 0 0 25px rgba(0,255,65,0.07);
+    backdrop-filter: blur(4px);
+  }
+
+  .logo-icon {
+    background: transparent !important;
+    border: 1px solid var(--accent) !important;
+    color: var(--accent) !important;
+    box-shadow: 0 0 12px rgba(0,255,65,0.35), inset 0 0 8px rgba(0,255,65,0.15);
+    text-shadow: 0 0 8px var(--accent);
+    border-radius: 6px !important;
+  }
+
+  .logo span {
+    color: var(--accent) !important;
+    text-shadow: 0 0 12px rgba(0,255,65,0.8);
+  }
+  .logo {
+    letter-spacing: 4px !important;
+    text-shadow: 0 0 6px rgba(0,255,65,0.4);
+  }
+
+  .status-dot {
+    background: var(--accent) !important;
+    box-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent);
+  }
+  .status-badge {
+    color: var(--accent) !important;
+    text-shadow: 0 0 6px rgba(0,255,65,0.5);
+  }
+  .status-badge::before {
+    content: '[ ';
+    opacity: 0.6;
+  }
+  .status-badge::after {
+    content: ' ]';
+    opacity: 0.6;
+  }
+
+  /* GLITCH TITLE */
+  .search-hero h1 {
+    background: none !important;
+    -webkit-text-fill-color: var(--accent) !important;
+    color: var(--accent);
+    font-family: var(--mono) !important;
+    letter-spacing: 6px;
+    text-shadow: 0 0 10px rgba(0,255,65,0.6), 0 0 30px rgba(0,255,65,0.25);
+    position: relative;
+    animation: flicker 4s infinite;
+  }
+  .search-hero h1::before,
+  .search-hero h1::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+  .search-hero h1::before {
+    color: #ff2222;
+    animation: glitch-1 3s infinite linear alternate-reverse;
+    clip-path: inset(20% 0 60% 0);
+    opacity: 0.55;
+  }
+  .search-hero h1::after {
+    color: #00ccff;
+    animation: glitch-2 2.5s infinite linear alternate-reverse;
+    clip-path: inset(60% 0 15% 0);
+    opacity: 0.55;
+  }
+
+  @keyframes glitch-1 {
+    0%   { transform: translate(0); } 20%  { transform: translate(-3px, 2px); }
+    40%  { transform: translate(2px, -1px); } 60% { transform: translate(-2px, 1px); }
+    80%  { transform: translate(3px, -2px); } 100% { transform: translate(0); }
+  }
+  @keyframes glitch-2 {
+    0%   { transform: translate(0); } 25%  { transform: translate(3px, -2px); }
+    50%  { transform: translate(-2px, 1px); } 75% { transform: translate(2px, 2px); }
+    100% { transform: translate(0); }
+  }
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.6; }
+    94% { opacity: 1; }
+    96% { opacity: 0.8; }
+    97% { opacity: 1; }
+  }
+
+  .search-hero p {
+    font-family: var(--mono);
+    color: var(--muted) !important;
+  }
+  .search-hero p::before { content: '> '; color: var(--accent); }
+
+  /* SEARCH CARD = TERMINAL WINDOW */
+  .search-card {
+    position: relative;
+    background: rgba(8,18,8,0.88) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 0 30px rgba(0,255,65,0.06), inset 0 0 40px rgba(0,0,0,0.4);
+    backdrop-filter: blur(3px);
+  }
+  .search-card::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: -1px;
+    width: 22px; height: 22px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--accent);
+    filter: drop-shadow(0 0 4px var(--accent));
+  }
+  .search-card::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; right: -1px;
+    width: 22px; height: 22px;
+    border-bottom: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+    filter: drop-shadow(0 0 4px var(--accent));
+  }
+
+  .search-card h3 {
+    color: var(--accent) !important;
+    text-shadow: 0 0 8px rgba(0,255,65,0.5);
+  }
+
+  /* ===== SEARCH UI BARU ===== */
+  .search-type-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    background: rgba(0,0,0,0.35);
+    padding: 5px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .stype {
+    flex: 1;
+    padding: 9px 4px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .stype:hover { color: var(--text); }
+  .stype.active {
+    background: linear-gradient(180deg, rgba(0,255,65,0.2), rgba(0,255,65,0.1));
+    color: var(--accent);
+    text-shadow: 0 0 8px rgba(0,255,65,0.6);
+    box-shadow: inset 0 0 12px rgba(0,255,65,0.08), 0 0 10px rgba(0,255,65,0.15);
+  }
+  .stype#type-phone.active {
+    background: linear-gradient(180deg, rgba(255,176,0,0.18), rgba(255,176,0,0.08));
+    color: var(--warning);
+    text-shadow: 0 0 8px rgba(255,176,0,0.6);
+  }
+
+  .search-main-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 10px 6px 16px;
+    transition: all 0.25s;
+  }
+  .search-main-row:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 18px rgba(0,255,65,0.3);
+  }
+  .prompt-symbol {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--muted);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .search-main-row input {
+    flex: 1;
+    border: none !important;
+    background: transparent !important;
+    font-size: 1rem;
+    padding: 12px 4px;
+  }
+  .search-main-row input:focus { box-shadow: none !important; }
+  .search-main-row .btn-search { border-radius: 7px !important; padding: 11px 22px; }
+
+  .multi-collapse { margin-top: 14px; }
+  .multi-collapse summary {
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 2px;
+    color: var(--muted);
+    padding: 8px 0 4px;
+    transition: color 0.2s;
+    list-style: none;
+  }
+  .multi-collapse summary::-webkit-details-marker { display: none; }
+  .multi-collapse summary:hover { color: var(--accent); }
+  .multi-collapse[open] summary { color: var(--accent); }
+
+  /* ===== ANIMASI HACKING TERMINAL ===== */
+  #hackTerminal {
+    display: none;
+    max-width: 720px;
+    margin: 28px auto 0;
+    background: rgba(0,0,0,0.75);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    min-height: 220px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 0 20px rgba(0,255,65,0.05);
+  }
+  #hackTerminal.show { display: block; }
+  #hackTerminal .ht-title {
+    color: var(--muted);
+    font-size: 0.68rem;
+    letter-spacing: 2px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+  }
+  #hackTerminal .ht-line { color: var(--accent); opacity: 0.9; line-height: 1.7; }
+  #hackTerminal .ht-line.dim { color: var(--muted); }
+  #hackTerminal .ht-line.warn { color: var(--warning); }
+  #hackTerminal .ht-line.err { color: var(--danger); }
+  #hackTerminal .ht-line.ok { color: #00ff88; }
+  #hackTerminal .cursor-blink::after {
+    content: '▊';
+    animation: blink-cursor 0.7s step-end infinite;
+    color: var(--accent);
+  }
+  @keyframes ht-scan {
+    0%   { top: -100%; }
+    100% { top: 400%; }
+  }
+
+  input, select {
+    background: rgba(0,0,0,0.45) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--accent) !important;
+    caret-color: var(--accent);
+    font-family: var(--mono) !important;
+    transition: all 0.25s !important;
+  }
+  input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 12px rgba(0,255,65,0.35), inset 0 0 8px rgba(0,255,65,0.08);
+    outline: none;
+  }
+  input::placeholder { color: #3a5f42 !important; }
+
+  /* BUTTONS */
+  .btn-search {
+    background: linear-gradient(180deg, rgba(0,255,65,0.18), rgba(0,179,45,0.28)) !important;
+    border: 1px solid var(--accent) !important;
+    color: var(--accent) !important;
+    font-family: var(--mono) !important;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 0 6px rgba(0,255,65,0.6);
+    box-shadow: 0 0 15px rgba(0,255,65,0.2), inset 0 0 12px rgba(0,255,65,0.08);
+    transition: all 0.2s !important;
+  }
+  .btn-search:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(0,255,65,0.32), rgba(0,179,45,0.42)) !important;
+    box-shadow: 0 0 25px rgba(0,255,65,0.45), inset 0 0 18px rgba(0,255,65,0.15);
+    transform: translateY(-1px);
+  }
+  .btn-search:disabled { border-color: var(--muted) !important; color: var(--muted) !important; box-shadow: none; }
+
+  #phoneLookupBtn {
+    border-color: var(--warning) !important;
+    color: var(--warning) !important;
+    background: linear-gradient(180deg, rgba(255,176,0,0.15), rgba(255,176,0,0.25)) !important;
+    text-shadow: 0 0 6px rgba(255,176,0,0.6);
+    box-shadow: 0 0 15px rgba(255,176,0,0.2), inset 0 0 12px rgba(255,176,0,0.08);
+  }
+
+  /* TABS */
+  .tabs {
+    background: rgba(6,14,6,0.92) !important;
+    backdrop-filter: blur(4px);
+  }
+  .tab-btn {
+    font-family: var(--mono) !important;
+    text-transform: uppercase;
+  }
+  .tab-btn.active {
+    color: var(--accent) !important;
+    border-bottom-color: var(--accent) !important;
+    text-shadow: 0 0 8px rgba(0,255,65,0.6);
+    background: linear-gradient(180deg, transparent 70%, rgba(0,255,65,0.06));
+  }
+
+  /* CARDS */
+  .source-card, .stat-card, .watchlist-form {
+    background: rgba(8,18,8,0.85) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.35);
+  }
+  .source-header {
+    background: rgba(0,255,65,0.04) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .source-name {
+    color: var(--accent) !important;
+    text-shadow: 0 0 6px rgba(0,255,65,0.5);
+  }
+  .source-name::before { content: '// '; opacity: 0.5; }
+
+  .info-item { background: rgba(0,0,0,0.4) !important; border: 1px solid rgba(26,51,32,0.5); }
+
+  .data-tag {
+    background: rgba(0,255,65,0.07) !important;
+    color: var(--accent) !important;
+    border: 1px solid rgba(0,255,65,0.2);
+    text-shadow: 0 0 4px rgba(0,255,65,0.3);
+  }
+  .data-tag.sensitive {
+    background: rgba(255,34,34,0.1) !important;
+    color: var(--danger) !important;
+    border-color: rgba(255,34,34,0.3);
+  }
+
+  table th { color: var(--accent) !important; font-family: var(--mono) !important; }
+  tr:hover td { background: rgba(0,255,65,0.03) !important; }
+
+  /* RISK BANNERS */
+  .risk-banner.SAFE { background: rgba(0,255,65,0.05) !important; border-color: var(--success) !important; }
+  .risk-banner.LOW  { background: rgba(0,255,65,0.04) !important; }
+  .risk-tag.SAFE, .risk-tag.LOW { background: rgba(0,255,65,0.12) !important; color: var(--success) !important; text-shadow: 0 0 6px rgba(0,255,65,0.5); }
+  .risk-pill.SAFE, .risk-pill.LOW { background: rgba(0,255,65,0.12) !important; color: var(--success) !important; }
+
+  .stat-number {
+    text-shadow: 0 0 15px currentColor;
+  }
+
+  /* LOADING TERMINAL STYLE */
+  .loading p { font-family: var(--mono); color: var(--accent) !important; }
+  .loading p::after {
+    content: '_';
+    animation: blink-cursor 0.8s step-end infinite;
+  }
+  @keyframes blink-cursor { 50% { opacity: 0; } }
+  .spinner {
+    border: 3px solid var(--border) !important;
+    border-top-color: var(--accent) !important;
+    box-shadow: 0 0 20px rgba(0,255,65,0.3);
+  }
+
+  /* BADGES */
+  .badge.email { background: rgba(0,255,65,0.1) !important; color: var(--accent) !important; }
+  .badge.phone { background: rgba(0,255,65,0.1) !important; color: var(--success) !important; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent2); }
+
+  ::selection { background: rgba(0,255,65,0.3); color: #fff; }
+</style>
 
 <header>
   <div class="logo">
@@ -575,42 +1040,40 @@
   <!-- TAB: PENCARIAN -->
   <div id="tab-search" class="tab-content active">
     <div class="search-hero">
-      <h1>DATA BREACH INTELLIGENCE</h1>
-      <p>Cek kebocoran data email, nama, nomor telepon, dan domain secara real-time</p>
+      <h1 data-text="DATA BREACH INTELLIGENCE">DATA BREACH INTELLIGENCE</h1>
+      <p>Cek kebocoran data email, nama, nomor telepon, domain, lokasi, dan TTL secara real-time</p>
 
-      <div class="demo-notice">
-        ⚠️ <div><strong>Mode Demo Aktif:</strong> Data yang ditampilkan adalah contoh simulasi. Untuk data real, isi API key di file <code>.env</code> (lihat <code>.env.example</code>).</div>
+    <div class="search-card" style="max-width: 720px;">
+      <div class="search-type-row">
+        <button class="stype active" id="type-email" onclick="setSearchType('email')">EMAIL</button>
+        <button class="stype" id="type-phone" onclick="setSearchType('phone')">TELEPON</button>
+        <button class="stype" id="type-domain" onclick="setSearchType('domain')">DOMAIN</button>
+        <button class="stype" id="type-name" onclick="setSearchType('name')">NAMA</button>
       </div>
 
-      <div class="search-card">
-        <div class="type-selector">
-          <button class="type-btn active" data-type="email" onclick="selectType(this)">
-            <span class="icon">📧</span> Email
-          </button>
-          <button class="type-btn" data-type="name" onclick="selectType(this)">
-            <span class="icon">👤</span> Nama
-          </button>
-          <button class="type-btn" data-type="phone" onclick="selectType(this)">
-            <span class="icon">📱</span> Telepon
-          </button>
-          <button class="type-btn" data-type="domain" onclick="selectType(this)">
-            <span class="icon">🌐</span> Domain
-          </button>
-        </div>
-
-        <div class="input-group">
-          <input type="text" id="queryInput" placeholder="Masukkan email, nama, nomor, atau domain..." />
-          <button class="btn-search" id="searchBtn" onclick="runSearch()">
-            🔍 Cari
-          </button>
-        </div>
+      <div class="search-main-row">
+        <span class="prompt-symbol">root@intel:~$</span>
+        <input type="text" id="queryInput" placeholder="masukkan target..." autocomplete="off" spellcheck="false" />
+        <button class="btn-search" id="searchBtn" onclick="runSearch()">SCAN</button>
+        <button class="btn-search" id="phoneLookupBtn" onclick="runPhoneLookup(true)" style="display:none; border-color:var(--warning); color:var(--warning); background:linear-gradient(180deg, rgba(255,176,0,0.15), rgba(255,176,0,0.25));">TRACE</button>
       </div>
+
+      <details class="multi-collapse">
+        <summary>&gt;&gt; CROSS-INTELLIGENCE (korelasi multi-parameter)</summary>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;">
+          <input type="text" id="multiEmail" placeholder="email target" />
+          <input type="text" id="multiPhone" placeholder="nomor telepon" />
+          <input type="text" id="multiName" placeholder="nama lengkap" />
+          <input type="text" id="multiLocation" placeholder="lokasi / kota" />
+        </div>
+        <button class="btn-search" onclick="runMultiSearch()" style="width:100%; margin-top:12px;">&gt;&gt; JALANKAN KORELASI</button>
+      </details>
+    </div>
     </div>
 
-    <div class="loading" id="loading">
-      <div class="spinner"></div>
-      <p>Memeriksa database breach intelligence...</p>
-      <small style="color: var(--muted); margin-top: 8px; display: block; font-family: var(--mono);">Mengakses multiple sumber data</small>
+    <div id="hackTerminal">
+      <div class="ht-title"><span>INTEL-SCAN v2.0 // SECURE CHANNEL</span><span id="htTimer">0.0s</span></div>
+      <div id="htLines"></div>
     </div>
 
     <div id="results"></div>
@@ -644,19 +1107,21 @@
     <div class="watchlist-form">
       <h3>+ Tambah ke Watchlist</h3>
       <div class="form-row">
-        <input type="text" id="wlQuery" placeholder="Email / domain / nama / telepon" />
+        <input type="text" id="wlQuery" placeholder="Email / domain / nama / telepon / lokasi" />
         <select id="wlType">
           <option value="email">📧 Email</option>
           <option value="name">👤 Nama</option>
           <option value="phone">📱 Telepon</option>
           <option value="domain">🌐 Domain</option>
+          <option value="location">📍 Lokasi</option>
+          <option value="ttl">🎂 TTL</option>
         </select>
         <input type="text" id="wlLabel" placeholder="Label (opsional)" />
         <button class="btn-add" onclick="addWatchlist()">+ Tambah</button>
       </div>
     </div>
 
-    <p class="section-title">Daftar Watchlist</p>
+    <p class="section-title">Daftar Watchlist <button class="btn-del" id="checkAllBtn" onclick="checkAllWatchlist()" style="float:right; background:rgba(0,255,65,0.12); border-color:var(--success); color:var(--success); padding:6px 14px;">🔄 Cek Semua Sekarang</button></p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -664,6 +1129,8 @@
             <th>Label</th>
             <th>Query</th>
             <th>Tipe</th>
+            <th>Breach Terakhir</th>
+            <th>Dicek</th>
             <th>Ditambahkan</th>
             <th></th>
           </tr>
@@ -701,10 +1168,105 @@
 </main>
 
 <script>
+  // ---- AUTH GUARD: redirect ke login jika sesi habis (401) ----
+  async function authFetch(url, options = {}) {
+    const res = await window.fetch(url, options);
+    if (res.status === 401) {
+      window.location.href = '/login.html';
+      throw new Error('Sesi berakhir, mengalihkan ke halaman login...');
+    }
+    return res;
+  }
+
   let selectedType = 'email';
 
+  // ---- TYPE SELECTOR ----
+  function setSearchType(type) {
+    selectedType = type;
+    document.querySelectorAll('#type-email, #type-phone, #type-domain, #type-name').forEach(btn => {
+      btn.classList.remove('active');
+      if (btn.id === 'type-' + type) btn.classList.add('active');
+    });
+    
+    const placeholders = {
+      email: 'target@email.com',
+      phone: '08123456789 / +6281234567890',
+      domain: 'example.com',
+      name: 'nama target...'
+    };
+    document.getElementById('queryInput').placeholder = placeholders[type] || placeholders.email;
+    
+    // Show/hide phone lookup button
+    const phoneLookupBtn = document.getElementById('phoneLookupBtn');
+    if (phoneLookupBtn) {
+      phoneLookupBtn.style.display = type === 'phone' ? 'inline-flex' : 'none';
+    }
+  }
+
+  // ---- HACK TERMINAL ANIMATION ----
+  let htTimerInterval = null;
+  let htTimeouts = [];
+
+  function hackShow(target) {
+    const term = document.getElementById('hackTerminal');
+    const lines = document.getElementById('htLines');
+    lines.innerHTML = '';
+    term.classList.add('show');
+    document.getElementById('results').innerHTML = '';
+
+    const t0 = Date.now();
+    document.getElementById('htTimer').textContent = '0.0s';
+    htTimerInterval = setInterval(() => {
+      document.getElementById('htTimer').textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
+    }, 100);
+
+    const seq = [
+      { cls: '',        text: `> init scan --target "${target}"` },
+      { cls: 'dim',     text: '[+] Membuat koneksi aman terenkripsi...' },
+      { cls: 'dim',     text: '[+] Melewati 3 proxy relay... OK' },
+      { cls: '',        text: '[*] Mengakses database breach global (XposedOrNot)...' },
+      { cls: 'warn',    text: '[!] Menyusupi indeks dump publik...' },
+      { cls: '',        text: '[*] Cross-referencing multi-source intelligence...' },
+      { cls: 'dim',     text: '[+] Dekripsi payload data... OK' },
+      { cls: 'warn',    text: '[!] Bypass rate-limiter... OK' },
+      { cls: '',        text: '[*] Analisis korelasi & fingerprinting...' },
+      { cls: 'ok',      text: '[✓] Menyusun laporan intelijen...' }
+    ];
+    let delay = 0;
+    seq.forEach((step, idx) => {
+      const to = setTimeout(() => {
+        const div = document.createElement('div');
+        div.className = 'ht-line ' + step.cls;
+        div.innerHTML = '<span class="cursor-blink"></span> ';
+        lines.appendChild(div);
+        // efek ketik per karakter
+        const textNode = document.createTextNode('');
+        div.appendChild(textNode);
+        let ci = 0;
+        const typeInt = setInterval(() => {
+          textNode.textContent += step.text[ci] || '';
+          ci++;
+          if (ci >= step.text.length) {
+            clearInterval(typeInt);
+            const cur = div.querySelector('.cursor-blink');
+            if (cur) cur.remove();
+          }
+        }, 14);
+        lines.scrollTop = lines.scrollHeight;
+      }, delay);
+      htTimeouts.push(to);
+      delay += 260 + Math.random() * 300;
+    });
+  }
+
+  function hackHide() {
+    clearInterval(htTimerInterval);
+    htTimeouts.forEach(clearTimeout);
+    htTimeouts = [];
+    document.getElementById('hackTerminal').classList.remove('show');
+  }
+
   // ---- TAB SWITCHING ----
-  // FIX: pakai parameter `btn` bukan `event.target` yang tidak reliable di semua browser
   function switchTab(name, btn) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -716,226 +1278,197 @@
     if (name === 'stats') loadStats();
   }
 
-  // ---- TYPE SELECTOR ----
-  function selectType(btn) {
-    document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    selectedType = btn.dataset.type;
-
-    const placeholders = {
-      email: 'contoh: nama@email.com',
-      name: 'contoh: Budi Santoso',
-      phone: 'contoh: 081234567890',
-      domain: 'contoh: contoh.com'
-    };
-    document.getElementById('queryInput').placeholder = placeholders[selectedType];
+  // ---- FUNGSI BUKA / TUTUP TABEL EKSPANSI ----
+  function toggleRow(rowId) {
+    const mainRow = document.getElementById('main-' + rowId);
+    const detailRow = document.getElementById('detail-' + rowId);
+    if (detailRow.classList.contains('show')) {
+      detailRow.classList.remove('show');
+      mainRow.classList.remove('expanded');
+    } else {
+      detailRow.classList.add('show');
+      mainRow.classList.add('expanded');
+    }
   }
 
-  // ---- SEARCH ----
+  // ---- MULTI-PARAMETER SEARCH ----
+  async function runMultiSearch() {
+    const email = document.getElementById('multiEmail').value.trim();
+    const phone = document.getElementById('multiPhone').value.trim();
+    const name = document.getElementById('multiName').value.trim();
+    const location = document.getElementById('multiLocation').value.trim();
+
+    if (!email && !phone && !name && !location) {
+      return alert('Harap isi minimal satu kolom parameter pencarian!');
+    }
+
+    const btn = document.getElementById('multiSearchBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Menganalisis Korelasi Data...';
+    hackShow([email, phone, name, location].filter(Boolean).join(' + '));
+    document.getElementById('results').innerHTML = '';
+
+    try {
+      const serverRes = await authFetch('/api/cross-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, phone, name, location })
+      });
+
+      const serverData = await serverRes.json();
+      if (serverData.success) {
+        renderResults(serverData.data);
+      } else {
+        throw new Error(serverData.error || 'Gagal memproses data');
+      }
+    } catch (err) {
+      document.getElementById('results').innerHTML = `<div class="error-box">Error: ${err.message}</div>`;
+    } finally {
+      hackHide();
+      btn.disabled = false;
+      btn.textContent = '🔍 Jalankan Cross-Intelligence Analisis';
+    }
+  }
+
+  // ---- SINGLE SEARCH ----
   async function runSearch() {
     const query = document.getElementById('queryInput').value.trim();
-    if (!query) return alert('Masukkan data yang ingin dicari');
+    if (!query) return alert('Masukkan query pencarian!');
 
     const btn = document.getElementById('searchBtn');
     btn.disabled = true;
     btn.textContent = '⏳ Mencari...';
-    document.getElementById('loading').classList.add('show');
+    hackShow(query || document.getElementById("queryInput").value);
     document.getElementById('results').innerHTML = '';
 
     try {
-      // FIX: Pisah fetch dan .json() dengan try-catch masing-masing
-      // agar error di satu sumber tidak membatalkan semua
-
-      // Server backend (mungkin tidak ada di mode demo)
-      let serverData = null;
-      try {
-        const serverRes = await fetch('/api/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, type: selectedType })
-        });
-        // Cek content-type sebelum parse JSON
-        const ct = serverRes.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          serverData = await serverRes.json();
-        }
-      } catch (e) {
-        console.warn('Server /api/search tidak tersedia:', e.message);
-      }
-
-      // XposedOrNot — hanya untuk email
-      let xonData = null;
-      if (selectedType === 'email') {
-        try {
-          const xonRes = await fetch(`https://api.xposedornot.com/v1/check-email/${encodeURIComponent(query)}`);
-          const ct = xonRes.headers.get('content-type') || '';
-          if (ct.includes('application/json')) {
-            xonData = await xonRes.json();
-          }
-        } catch (e) {
-          console.warn('XposedOrNot gagal:', e.message);
-        }
-      }
-
-      // HackMyIP — hanya untuk email
-      let hackData = null;
-      if (selectedType === 'email') {
-        try {
-          const hackRes = await fetch(`https://hackmyip.com/api/breach?email=${encodeURIComponent(query)}`);
-          const ct = hackRes.headers.get('content-type') || '';
-          if (ct.includes('application/json')) {
-            hackData = await hackRes.json();
-          }
-        } catch (e) {
-          console.warn('HackMyIP gagal:', e.message);
-        }
-      }
-
-      // Bangun extraSources dari API eksternal yang berhasil
-      const extraSources = [];
-
-      if (xonData && xonData.status === 'success') {
-        // Format response: {"breaches":[["Tokopedia","MyPertamina"]],...}
-        // breaches adalah array of arrays — flatten jadi list nama breach
-        const rawBreaches = xonData.breaches || [];
-        const breachNames = rawBreaches.flat();
-        const breaches = breachNames.map(name => ({
-          Name: name,
-          BreachDate: '-',
-          DataClasses: [],
-          IsVerified: true,
-          PwnCount: 0
-        }));
-        extraSources.push({ source: 'XposedOrNot', status: 'success', breaches });
-      } else if (xonData && (xonData.Error === 'Not found' || xonData.status === 'error')) {
-        extraSources.push({ source: 'XposedOrNot', status: 'success', breaches: [] });
-      }
-
-      // Fetch detail tiap breach dari XposedOrNot (nama saja tidak cukup)
-      const xonSrc = extraSources.find(s => s.source === 'XposedOrNot');
-      if (xonSrc && xonSrc.breaches.length > 0) {
-        try {
-          const metaRes = await fetch('https://api.xposedornot.com/v1/breach-analytics?email=' + encodeURIComponent(query));
-          const ct2 = metaRes.headers.get('content-type') || '';
-          if (ct2.includes('application/json')) {
-            const metaData = await metaRes.json();
-            // BreachMetrics berisi detail tiap breach
-            const metrics = metaData.BreachMetrics || {};
-            const industry = metrics.industry || [];
-            const passwords = metrics.passwords || [];
-            const yearArr = metrics.year || [];
-            // ExposedBreaches.breaches_details berisi array object detail
-            const details = (metaData.ExposedBreaches && metaData.ExposedBreaches.breaches_details) || [];
-            if (details.length > 0) {
-              xonSrc.breaches = details.map(d => ({
-                Name: d.breach || d.breachID || 'Unknown',
-                BreachDate: d.xposed_date || d.breachDate || '-',
-                DataClasses: d.xposed_data ? d.xposed_data.split(';').map(s => s.trim()) : [],
-                IsVerified: true,
-                PwnCount: d.xposed_records || 0,
-                Domain: d.domain || '',
-                Industry: d.industry || ''
-              }));
-            }
-          }
-        } catch(e) {
-          console.warn('XposedOrNot detail fetch gagal:', e.message);
-        }
-      }
-
-      if (hackData && hackData.data) {
-        const d = hackData.data;
-        extraSources.push({
-          source: 'HackMyIP',
-          status: 'success',
-          hackData: d,
-          found: d.breaches || 0,
-          services: d.services || [],
-          risk: d.risk || {},
-          passwords: d.passwords || {}
-        });
-      }
-
-      // Jika server backend ada dan sukses, gabungkan
-      if (serverData && serverData.success) {
-        // FIX: De-duplikasi — hapus source dari backend yang namanya sudah ada di extraSources
-        const extraSourceNames = new Set(extraSources.map(s => s.source));
-        const backendSources = (serverData.data.sources || []).filter(s => !extraSourceNames.has(s.source));
-        serverData.data.sources = [...extraSources, ...backendSources];
-
-        const xonCount = extraSources.find(s => s.source === 'XposedOrNot')?.breaches?.length || 0;
-        const hackCount = hackData?.data?.breaches || 0;
-        serverData.data.summary.total_breaches = Math.max(
-          serverData.data.summary.total_breaches || 0,
-          xonCount,
-          hackCount
-        );
-
-        const total = serverData.data.summary.total_breaches;
-        if (total >= 10) serverData.data.summary.risk_level = 'CRITICAL';
-        else if (total >= 5) serverData.data.summary.risk_level = 'HIGH';
-        else if (total >= 2) serverData.data.summary.risk_level = 'MEDIUM';
-        else if (total >= 1) serverData.data.summary.risk_level = 'LOW';
-        else serverData.data.summary.risk_level = 'SAFE';
-
+      const serverRes = await authFetch(`/api/search?q=${encodeURIComponent(query)}&type=${selectedType}`);
+      if (!serverRes.ok) throw new Error('Server error: ' + serverRes.status);
+      const serverData = await serverRes.json();
+      
+      if (serverData.success) {
         renderResults(serverData.data);
-
-      } else if (extraSources.length > 0) {
-        // FIX: Jika tidak ada backend tapi ada data dari API eksternal, tetap tampilkan
-        const xonBreaches = extraSources.find(s => s.source === 'XposedOrNot')?.breaches || [];
-        const hackBreachCount = hackData?.data?.breaches || 0;
-        const totalBreaches = Math.max(xonBreaches.length, hackBreachCount);
-
-        let riskLevel = 'SAFE';
-        if (totalBreaches >= 10) riskLevel = 'CRITICAL';
-        else if (totalBreaches >= 5) riskLevel = 'HIGH';
-        else if (totalBreaches >= 2) riskLevel = 'MEDIUM';
-        else if (totalBreaches >= 1) riskLevel = 'LOW';
-
-        const allDataClasses = [...new Set(xonBreaches.flatMap(b => b.DataClasses || []))];
-
-        renderResults({
-          query,
-          summary: {
-            risk_level: riskLevel,
-            total_breaches: totalBreaches,
-            data_classes: allDataClasses
-          },
-          sources: extraSources
-        });
-
       } else {
-        // Tidak ada backend dan tidak ada data eksternal — tampilkan pesan
-        document.getElementById('results').innerHTML = `
-          <div class="error-box">
-            <strong>⚠️ Tidak ada data yang berhasil dimuat.</strong><br><br>
-            Kemungkinan penyebab:<br>
-            • Backend <code>/api/search</code> tidak berjalan (mode demo)<br>
-            • API eksternal diblokir CORS di browser<br>
-            • Koneksi internet bermasalah<br><br>
-            Pastikan backend server sudah dijalankan, atau jalankan melalui proxy untuk akses API eksternal.
-          </div>
-        `;
+        throw new Error(serverData.error || 'Gagal memproses data');
       }
-
     } catch (err) {
-      document.getElementById('results').innerHTML = `
-        <div class="error-box">
-          <strong>Error tidak terduga:</strong> ${err.message}
-        </div>
-      `;
-      console.error('runSearch error:', err);
+      document.getElementById('results').innerHTML = `<div class="error-box">Error: ${err.message}</div>`;
     } finally {
-      document.getElementById('loading').classList.remove('show');
+      hackHide();
       btn.disabled = false;
-      btn.textContent = '🔍 Cari';
+      btn.textContent = 'SCAN';
     }
   }
 
-  // Enter key
+  // ---- PHONE OWNER LOOKUP (Reverse Phone / Caller ID) ----
+  async function runPhoneLookup(forceRefresh = false) {
+    const query = document.getElementById('queryInput').value.trim();
+    if (!query) return alert('Masukkan nomor telepon!');
+
+    const btn = document.getElementById('phoneLookupBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Mencari pemilik...';
+    hackShow(query || document.getElementById("queryInput").value);
+    document.getElementById('results').innerHTML = '';
+
+    try {
+      const res = await authFetch(`/api/phone-lookup?q=${encodeURIComponent(query)}${forceRefresh ? '&refresh=1' : ''}`);
+      if (!res.ok) throw new Error('Server error: ' + res.status);
+      const data = await res.json();
+      
+      if (data.success) {
+        renderPhoneLookup(data.data);
+      } else {
+        throw new Error(data.error || 'Gagal lookup nomor');
+      }
+    } catch (err) {
+      document.getElementById('results').innerHTML = `<div class="error-box">Error: ${err.message}</div>`;
+    } finally {
+      hackHide();
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }
+
+  // Enter key untuk pencarian tunggal
   document.getElementById('queryInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') runSearch();
+    if (e.key === 'Enter') {
+      if (selectedType === 'phone' && document.getElementById('phoneLookupBtn')?.style.display !== 'none') {
+        runPhoneLookup();
+      } else {
+        runSearch();
+      }
+    }
   });
+
+  // ---- CROSS-REFERENCE PANEL ----
+  function detectQueryType(q) {
+    if (/^\+?\d[\d\s\-()]{6,}$/.test(q)) return 'phone';
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q)) return 'email';
+    if (/^[\w-]+\.[a-z]{2,}$/i.test(q)) return 'domain';
+    return 'name';
+  }
+
+  function internalSearch(type, query) {
+    document.getElementById('queryInput').value = query;
+    switchTab('search', document.querySelector('.tab-btn.active') || document.querySelector('.tab-btn'));
+    setSearchType(type);
+    if (type === 'phone') {
+      // paksa lookup pemilik
+      setTimeout(() => runPhoneLookup(true), 50);
+    } else {
+      setTimeout(() => runSearch(), 50);
+    }
+  }
+
+  function extLink(url) { window.open(url, '_blank', 'noopener'); }
+
+  function renderActionPanel(query) {
+    const type = detectQueryType(query);
+    const enc = encodeURIComponent(query);
+    const digits = query.replace(/\D/g, '');
+    let btns = '';
+
+    if (type === 'email') {
+      const domain = query.split('@')[1];
+      btns = `
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick='internalSearch("domain", "${domain}")'>🌐 Cek Domain ${domain}</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://epieos.com/?q=${enc}&t0=9&t1=9')">🕵️ Epieos (Google Account)</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://holehe.vercel.app/')">🕳️ Holehe (Registrasi Akun)</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://haveibeenpwned.com/account/${enc}')">🔓 HIBP Official</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.google.com/search?q=%22${enc}%22')">🔎 Google Dork</span>`;
+    } else if (type === 'phone') {
+      btns = `
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.truecaller.com/search/id/${digits}')">📞 Truecaller Web</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://sync.me/search/?number=${digits}')">🔄 Sync.me</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://wa.me/${digits.startsWith("62") ? digits : "62" + digits.replace(/^0+/, "")}')">💬 Cek WhatsApp</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://kredibel.com/search?q=${enc}')">🚨 Kredibel (Cek Penipuan)</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.google.com/search?q=%22${enc}%22')">🔎 Google Dork</span>
+        ${window._lastPhoneReport?.owner_info?.social_accounts?.length ? `<span class="data-tag sensitive" style="cursor:pointer; padding:8px 14px;" onclick='internalSearch("name", "@${window._lastPhoneReport.owner_info.social_accounts[0]}")'>👤 Telusuri Akun @${window._lastPhoneReport.owner_info.social_accounts[0]}</span>` : ''}`;
+    } else if (type === 'domain') {
+      btns = `
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.shodan.io/search?query=${enc}')">🖥️ Shodan</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://crt.sh/?q=${enc}')">📜 crt.sh (SSL Certs)</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://web.archive.org/web/*/${enc}')">🏛️ Wayback Machine</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://hunter.io/search/${enc}')">📧 Hunter.io</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.google.com/search?q=site:${enc}+%22password%22+OR+%22login%22+OR+ext:sql')">🔎 Dork Dump Data</span>`;
+    } else {
+      btns = `
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.google.com/search?q=%22${enc}%22+(site:facebook.com+OR+site:instagram.com+OR+site:linkedin.com)')">🔎 Sosmed (Google)</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.linkedin.com/search/results/people/?keywords=${enc}')">💼 LinkedIn</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://www.google.com/search?q=%22${enc}%22+(ext:xls+OR+ext:sql+OR+ext:txt+OR+site:pastebin.com)')">📄 Dork Dump Dokumen</span>
+        <span class="data-tag" style="cursor:pointer; padding:8px 14px;" onclick="extLink('https://whatsmyname.app/?q=${enc}')">🌐 WhatsMyName (300+ situs)</span>`;
+    }
+
+    return `
+      <div style="margin-top:24px; background: var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px;">
+        <p style="font-size:0.75rem; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">🔗 Cross-Reference & Deep OSINT</p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">${btns}</div>
+        <p style="font-size:0.7rem; color:var(--muted); margin-top:10px;">Klik untuk membuka tool eksternal dengan query terisi otomatis</p>
+      </div>
+    `;
+  }
 
   // ---- RENDER RESULTS ----
   function renderResults(data) {
@@ -955,8 +1488,8 @@
       <div class="risk-banner ${summary.risk_level}">
         <div class="risk-icon">${riskIcons[summary.risk_level] || '❓'}</div>
         <div class="risk-info">
-          <h2>${data.query}</h2>
-          <p>${riskTexts[summary.risk_level] || ''} — ${summary.total_breaches} breach ditemukan</p>
+          <h2>${data.query || '-'}</h2>
+          <p>${riskTexts[summary.risk_level] || ''} — ${summary.total_breaches} breach/temuan ditemukan</p>
         </div>
         <div class="risk-tag ${summary.risk_level}">${summary.risk_level}</div>
       </div>
@@ -974,7 +1507,7 @@
     }
 
     if (summary.data_classes && summary.data_classes.length > 0) {
-      const sensitiveTypes = ['password', 'credit', 'bank', 'social security', 'ssn'];
+      const sensitiveTypes = ['password', 'credit', 'bank', 'social security', 'ssn', 'ktp', 'nik'];
       html += `<div style="margin-bottom: 20px;">
         <p style="font-size: 0.75rem; color: var(--muted); margin-bottom: 8px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px;">Tipe Data yang Bocor</p>
         <div class="data-tags">
@@ -989,11 +1522,11 @@
     if (!sources || sources.length === 0) {
       html += '<div class="empty-result">Tidak ada sumber data yang merespons.</div>';
     } else {
-      html += '<div class="sources-grid">';
+      html += '<div style="display: flex; flex-direction: column; gap: 16px;">';
       sources.forEach(src => {
         if (!src || !src.source) return;
-        const statusClass = src.status === 'success' ? 'status-ok' : src.status === 'demo' ? 'status-demo' : 'status-err';
-        const statusText = src.status === 'success' ? 'LIVE' : src.status === 'demo' ? 'DEMO' : 'ERROR';
+        const statusClass = src.status === 'success' ? 'status-ok' : (src.status === 'demo' || src.status === 'no_key') ? 'status-demo' : 'status-err';
+        const statusText = src.status === 'success' ? 'LIVE' : (src.status === 'demo' || src.status === 'no_key') ? 'DEMO' : 'ERROR';
 
         html += `
           <div class="source-card">
@@ -1010,13 +1543,62 @@
       html += '</div>';
     }
 
+    // Panel cross-reference
+    if (data.query) {
+      html += renderActionPanel(data.query.split(' | ')[0]);
+    }
+
     document.getElementById('results').innerHTML = html;
   }
 
   // ---- RENDER SOURCE BODY ----
-  // FIX: Fungsi ini sekarang benar-benar terpisah dari runSearch
   function renderSourceBody(src) {
-    // HIBP / XposedOrNot — punya array breaches
+    // 1. RAW DATA (Tabel Ekspansi)
+    if (src.rawData && src.rawData.length > 0) {
+      let tableHtml = `<table class="raw-data-table">
+        <thead>
+          <tr>
+            <th>Sumber Terindikasi / Konteks</th>
+            <th>Tanggal Temuan</th>
+            <th>Tipe Data</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      src.rawData.forEach((item, index) => {
+        const rowId = (src.source || 'src').replace(/\s+/g, '') + '-' + index;
+        const tagsHtml = (item.tags || []).map(t => `<span class="data-tag">${t}</span>`).join(' ');
+
+        tableHtml += `
+          <tr class="main-row" id="main-${rowId}" onclick="toggleRow('${rowId}')">
+            <td><span class="expand-icon">▶</span> ${item.context || 'Detail Datadump'}</td>
+            <td style="font-family: var(--mono); color: var(--muted);">${item.date || '-'}</td>
+            <td><div class="data-tags">${tagsHtml}</div></td>
+          </tr>
+          <tr class="detail-row" id="detail-${rowId}">
+            <td colspan="3" class="detail-content">
+              <div style="margin-bottom: 8px; font-size: 0.75rem; color: var(--warning);">⚠️ Menampilkan Detail Data Mentah Asli:</div>
+              <div style="background: var(--surface); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">`;
+
+        if (item.details) {
+          for (const [key, value] of Object.entries(item.details)) {
+            const isSensitive = ['password', 'nik', 'cc', 'pin', 'ktp', 'hash', 'secret'].some(k => key.toLowerCase().includes(k));
+            tableHtml += `
+              <div class="raw-key-value">
+                <div class="k">${key.replace(/_/g, ' ')}</div>
+                <div class="v ${isSensitive ? 'sensitive' : ''}">${value}</div>
+              </div>`;
+          }
+        }
+
+        tableHtml += `</div></td></tr>`;
+      });
+
+      tableHtml += `</tbody></table>`;
+      return tableHtml;
+    }
+
+    // 2. HIBP / XposedOrNot — array breaches
     if (Array.isArray(src.breaches)) {
       if (src.breaches.length === 0) {
         return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
@@ -1041,7 +1623,7 @@
       }).join('');
     }
 
-    // LeakCheck — punya array results
+    // 3. LeakCheck — array results
     if (Array.isArray(src.results)) {
       if (src.results.length === 0) {
         return '<div class="empty-result">✅ Tidak ditemukan di database ini</div>';
@@ -1058,7 +1640,7 @@
       `;
     }
 
-    // EmailRep — punya data.reputation
+    // 4. EmailRep
     if (src.data && src.data.reputation !== undefined) {
       const d = src.data;
       const det = d.details || {};
@@ -1075,7 +1657,7 @@
       `;
     }
 
-    // Hunter — punya data.emails_found
+    // 5. Hunter
     if (src.data && src.data.emails_found !== undefined) {
       const d = src.data;
       return `
@@ -1093,7 +1675,7 @@
       `;
     }
 
-    // Shodan — punya data.subdomains
+    // 6. Shodan
     if (src.data && src.data.subdomains !== undefined) {
       const d = src.data;
       return `
@@ -1103,7 +1685,7 @@
       `;
     }
 
-    // NumVerify — phone validation
+    // 7. NumVerify
     if (src.source === 'NumVerify' && src.data) {
       const d = src.data;
       return `
@@ -1125,7 +1707,7 @@
       `;
     }
 
-    // AbstractAPI Phone
+    // 8. AbstractAPI Phone
     if (src.source === 'AbstractAPI Phone' && src.data) {
       const d = src.data;
       const conn = d.connection || {};
@@ -1146,27 +1728,67 @@
       `;
     }
 
-    // HackMyIP
-    if (src.hackData) {
-      const d = src.hackData;
+    // 9. HackMyIP — format dari backend (found/services/passwords/risk)
+    if (src.source === 'HackMyIP' && src.found !== undefined) {
       const r = src.risk || {};
+      const p = src.passwords || {};
       return `
         <div style="margin-bottom:12px;">
-          <span style="font-size:1.5rem;">${d.breaches > 0 ? '⚠️' : '✅'}</span>
-          <strong style="font-size:0.95rem; margin-left:8px;">${d.breaches || 0} breach ditemukan</strong>
+          <span style="font-size:1.5rem;">${src.found > 0 ? '⚠️' : '✅'}</span>
+          <strong style="font-size:0.95rem; margin-left:8px;">${src.found} breach ditemukan</strong>
         </div>
         ${r.level && r.level !== 'unknown' ? `<div class="info-item" style="margin-bottom:8px;"><div class="key">Risk Score</div><div class="val" style="color:var(--warning)">${r.level}${r.score != null ? ' (' + r.score + '/100)' : ''}</div></div>` : ''}
-        ${src.passwords?.plain_text > 0 ? `<p style="color:var(--danger);font-size:0.8rem;margin-bottom:8px;">🚨 ${src.passwords.plain_text} password plain text bocor!</p>` : ''}
-        ${(src.services || []).length > 0 ? `<p style="font-size:0.78rem;color:var(--muted);">Services: ${src.services.join(', ')}</p>` : ''}
+        ${p.plain_text > 0 ? `<p style="color:var(--danger);font-size:0.8rem;margin-bottom:8px;">🚨 ${p.plain_text} password plain text bocor!</p>` : ''}
+        ${p.weak_hash > 0 || p.strong_hash > 0 ? `<p style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;">Hash: ${p.plain_text||0} plaintext · ${p.weak_hash||0} lemah · ${p.strong_hash||0} kuat</p>` : ''}
+        ${(src.services || []).length > 0 ? `
+          <p style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;font-family:var(--mono);">LAYANAN YANG TERKENA (${src.services.length}):</p>
+          <div class="data-tags">${src.services.map(s => `<span class="data-tag">${s}</span>`).join('')}</div>
+        ` : ''}
       `;
+    }
+
+    // 10. Gravatar — profil publik
+    if (src.source === 'Gravatar') {
+      if (!src.data?.exists) return '<div class="empty-result">Tidak ada profil Gravatar terkait email ini</div>';
+      const d = src.data;
+      return `
+        <div style="display:flex; gap:14px; align-items:center; margin-bottom:12px;">
+          <img src="${d.avatar_url}" style="width:56px;height:56px;border-radius:12px;border:2px solid var(--border);" onerror="this.style.display='none'" />
+          <div>
+            <div style="font-weight:700;">${d.display_name || 'Tanpa nama'}</div>
+            ${d.location ? `<div style="font-size:0.78rem;color:var(--muted);">📍 ${d.location}</div>` : ''}
+          </div>
+        </div>
+        ${d.description ? `<p style="font-size:0.82rem;color:var(--muted);margin-bottom:10px;">${d.description.substring(0,200)}</p>` : ''}
+        ${(d.accounts || []).length > 0 ? `<div class="data-tags">${d.accounts.map(a => `<span class="data-tag">${a}</span>`).join('')}</div>` : ''}
+      `;
+    }
+
+    // 11. Domain Check
+    if (src.source === 'Domain Check') {
+      const d = src.data;
+      return `
+        <div class="info-grid">
+          <div class="info-item"><div class="key">Domain Email</div><div class="val" style="font-family:var(--mono)">${d.domain}</div></div>
+          <div class="info-item"><div class="key">Server Mail Aktif</div><div class="val">${d.mx_valid ? '✅ Ya (email bisa menerima)' : '❌ Tidak (email mati/palsu?)'}</div></div>
+          ${(d.mx_records || []).length > 0 ? `<div class="info-item" style="grid-column:1/-1;"><div class="key">MX Records</div><div class="val" style="font-family:var(--mono); font-size:0.78rem;">${d.mx_records.join(', ')}</div></div>` : ''}
+        </div>
+      `;
+    }
+
+    // XposedOrNot paste exposure
+    if (src.source === 'XposedOrNot' && src.pastes > 0 && Array.isArray(src.breaches)) {
+      return renderSourceBody({ source: 'XON', breaches: src.breaches }) +
+        `<p style="color:var(--warning); font-size:0.8rem; margin-top:10px;">📋 Juga ditemukan di ${src.pastes} paste/dump publik</p>`;
     }
 
     return '<div class="empty-result" style="font-size:0.8rem;">Data tidak tersedia</div>';
   }
+
   // ---- HISTORY ----
   async function loadHistory() {
     try {
-      const res = await fetch('/api/history');
+      const res = await authFetch('/api/history');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       const tbody = document.getElementById('historyTableBody');
@@ -1195,7 +1817,7 @@
 
   async function deleteHistory(id, btn) {
     try {
-      await fetch('/api/history/' + id, { method: 'DELETE' });
+      await authFetch('/api/history/' + id, { method: 'DELETE' });
       btn.closest('tr').remove();
     } catch (e) {
       alert('Gagal menghapus: ' + e.message);
@@ -1205,13 +1827,13 @@
   // ---- WATCHLIST ----
   async function loadWatchlist() {
     try {
-      const res = await fetch('/api/watchlist');
+      const res = await authFetch('/api/watchlist');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       const tbody = document.getElementById('watchlistTableBody');
 
       if (!data.data?.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--muted); padding: 24px;">Watchlist kosong</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 24px;">Watchlist kosong</td></tr>';
         return;
       }
 
@@ -1220,6 +1842,8 @@
           <td style="font-weight: 600;">${r.label || '-'}</td>
           <td style="font-family: var(--mono); font-size: 0.85rem;">${r.query}</td>
           <td><span class="badge ${r.query_type}">${r.query_type}</span></td>
+          <td style="font-family: var(--mono); color: ${r.last_breach_count > 0 ? 'var(--danger)' : 'var(--success)'};">${r.last_breach_count ?? 0} <span style="color:var(--muted); font-size:0.7rem;">(${r.last_risk_level || '-'})</span></td>
+          <td style="font-size: 0.78rem; color: var(--muted);">${r.last_checked ? new Date(r.last_checked).toLocaleString('id-ID') : 'belum'}</td>
           <td style="font-size: 0.78rem; color: var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</td>
           <td><button class="btn-del" onclick="deleteWatchlist(${r.id}, this)">Hapus</button></td>
         </tr>
@@ -1238,7 +1862,7 @@
     if (!query) return alert('Masukkan query');
 
     try {
-      await fetch('/api/watchlist', {
+      await authFetch('/api/watchlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, type, label })
@@ -1253,31 +1877,314 @@
 
   async function deleteWatchlist(id, btn) {
     try {
-      await fetch('/api/watchlist/' + id, { method: 'DELETE' });
+      await authFetch('/api/watchlist/' + id, { method: 'DELETE' });
       btn.closest('tr').remove();
     } catch (e) {
       alert('Gagal menghapus: ' + e.message);
     }
   }
 
-  // ---- STATS ----
-  async function loadStats() {
+  // ---- WATCHLIST CHECK ALL ----
+  async function checkAllWatchlist() {
+    const btn = document.getElementById('checkAllBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Memeriksa semua target...';
     try {
-      const res = await fetch('/api/stats');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const res = await authFetch('/api/watchlist/check-all', { method: 'POST' });
       const data = await res.json();
-      const s = data.data;
-      document.getElementById('stat-total').textContent = s.total_searches || 0;
-      document.getElementById('stat-breaches').textContent = s.total_breaches_found || 0;
-      document.getElementById('stat-critical').textContent = s.critical_count || 0;
-      document.getElementById('stat-safe').textContent = s.safe_count || 0;
+      if (data.success) {
+        alert(`✅ Selesai!\n\nTarget diperiksa: ${data.data.checked}\nBreach baru terdeteksi: ${data.data.alerts}`);
+        loadWatchlist();
+      } else {
+        throw new Error(data.error || 'Gagal');
+      }
     } catch (e) {
-      ['stat-total','stat-breaches','stat-critical','stat-safe'].forEach(id => {
-        document.getElementById(id).textContent = '-';
-      });
+      alert('Gagal: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔄 Cek Semua Sekarang';
     }
   }
+
+  // ---- EXPORT REPORT ----
+  function downloadReport() {
+    const d = window._lastPhoneReport;
+    if (!d) return alert('Tidak ada laporan untuk diunduh');
+    
+    const lines = [
+      '='.repeat(60),
+      'LAPORAN PHONE LOOKUP - BREACH INTEL',
+      `Tanggal: ${new Date().toLocaleString('id-ID')}`,
+      `Nomor: ${d.phone.e164} (${d.phone.local})`,
+      `Confidence: ${d.confidence}%`,
+      '='.repeat(60),
+      '',
+      '[INFO PEMILIK/CARRIER]'
+    ];
+    
+    if (d.owner_info) {
+      if (d.owner_info.carrier) lines.push(`  Carrier: ${d.owner_info.carrier}`);
+      if (d.owner_info.line_type) lines.push(`  Tipe: ${d.owner_info.line_type}`);
+      if (d.owner_info.country) lines.push(`  Negara: ${d.owner_info.country}`);
+      if (d.owner_info.possible_names?.length) lines.push(`  Nama Kemungkinan: ${d.owner_info.possible_names.join(', ')}`);
+      if (d.owner_info.social_accounts?.length) lines.push(`  Akun Terkait: ${d.owner_info.social_accounts.map(a => '@'+a).join(', ')}`);
+      if (d.owner_info.public_locations?.length) lines.push(`  Lokasi Publik: ${d.owner_info.public_locations.join(', ')}`);
+      if (d.owner_info.breach_exposure) lines.push(`  BREACH: ${d.owner_info.breach_exposure}`);
+    }
+    
+    if (d.places?.length) {
+      lines.push('', '[BISNIS TERKAIT]');
+      d.places.forEach(p => lines.push(`  - ${p.title} (${p.category || '-'}) ${p.address}`));
+    }
+    
+    const serper = (d.sources || []).find(s => s.publicRecords);
+    if (serper?.publicRecords?.length) {
+      lines.push('', `[JEJAK PUBLIK - ${serper.publicRecords.length} hasil]`);
+      serper.publicRecords.forEach((r, i) => {
+        lines.push(`  ${i+1}. [${r.platform}] ${r.title}`);
+        lines.push(`     ${r.link}`);
+        if (r.snippet) lines.push(`     "${r.snippet.substring(0, 150)}"`);
+      });
+    }
+    
+    lines.push('', '='.repeat(60), 'Catatan: Gunakan hanya untuk keperluan sah. UU PDP Indonesia.');
+    
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `phone-lookup-${d.phone.e164.replace('+','')}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ---- PHONE LOOKUP RENDER ----
+  function renderPhoneLookup(data) {
+    const { phone, sources, owner_info, confidence, has_owner_info, note } = data;
+    
+    window._lastPhoneReport = data;
+    
+    let html = `
+      <div class="risk-banner ${has_owner_info ? 'LOW' : 'MEDIUM'}">
+        <div class="risk-icon">📞</div>
+        <div class="risk-info">
+          <h2>Lookup: ${phone.e164} (${phone.local})</h2>
+          <p>${note || 'Lookup selesai'}${data.from_cache ? ' · <span style="color:var(--accent)">⚡ dari cache</span>' : ''}</p>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+          <div class="risk-tag ${has_owner_info ? 'LOW' : 'MEDIUM'}">Confidence: ${confidence}%</div>
+          <div style="display:flex; gap:6px;">
+            ${data.from_cache ? `<button class="btn-del" onclick="runPhoneLookup(true)" style="background:rgba(0,212,255,0.15); border-color:var(--accent); color:var(--accent);">🔄 Cari Ulang</button>` : ''}
+            <button class="btn-del" onclick="downloadReport()" style="background:rgba(0,212,255,0.15); border-color:var(--accent); color:var(--accent);">⬇️ Export</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Peringatan jika semua query Serper gagal (rate limit/kuota habis)
+    if (data.summary?.serper_queries_ok === 0 && data.summary?.total_records === 0) {
+      html += `
+        <div class="error-box" style="margin-bottom:20px;">
+          ⚠️ Pencarian Google tidak merespons (kemungkinan kuota Serper habis atau rate limit).
+          Hasil mungkin tidak lengkap. Coba lagi dalam beberapa menit atau cek kuota di dashboard.serper.dev
+        </div>
+      `;
+    }
+
+    // Phone format info
+    html += `
+      <div style="background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.2); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap;">
+        <div><div style="font-size:0.7rem; color: var(--muted); margin-bottom: 3px;">FORMAT E.164</div><div style="font-family: var(--mono); color: var(--accent); font-size: 0.95rem;">${phone.e164}</div></div>
+        <div><div style="font-size:0.7rem; color: var(--muted); margin-bottom: 3px;">FORMAT LOKAL</div><div style="font-family: var(--mono); font-size: 0.95rem;">${phone.local}</div></div>
+        <div><div style="font-size:0.7rem; color: var(--muted); margin-bottom: 3px;">NEGARA</div><div style="font-family: var(--mono); font-size: 0.95rem;">${phone.country_code}</div></div>
+      </div>
+    `;
+
+    // Owner Info
+    if (owner_info) {
+      html += `
+        <div style="margin-bottom: 20px;">
+          <p style="font-size: 0.75rem; color: var(--muted); margin-bottom: 12px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px;">👤 Informasi Pemilik / Carrier</p>
+          <div class="info-grid">
+      `;
+      
+      if (owner_info.carrier) {
+        html += `<div class="info-item"><div class="key">Carrier / Operator</div><div class="val" style="color: var(--accent)">${owner_info.carrier}</div></div>`;
+      }
+      if (owner_info.original_carrier) {
+        html += `<div class="info-item"><div class="key">Operator Asal</div><div class="val">${owner_info.original_carrier}</div></div>`;
+      }
+      if (owner_info.location) {
+        html += `<div class="info-item"><div class="key">Lokasi Terdaftar</div><div class="val">${owner_info.location}</div></div>`;
+      }
+      if (owner_info.line_type) {
+        html += `<div class="info-item"><div class="key">Tipe Jalur</div><div class="val"><span class="badge phone">${owner_info.line_type}</span></div></div>`;
+      }
+      if (owner_info.country) {
+        html += `<div class="info-item"><div class="key">Negara</div><div class="val">${owner_info.country}</div></div>`;
+      }
+      if (owner_info.possible_names?.length) {
+        html += `<div class="info-item"><div class="key">⚠️ Nama Kemungkinan (OSINT)</div><div class="val" style="color: var(--warning)">${owner_info.possible_names.join(', ')}</div></div>`;
+      }
+      if (owner_info.social_accounts?.length) {
+        html += `<div class="info-item"><div class="key">🔗 Akun Terkait (OSINT)</div><div class="val" style="color: var(--accent)">${owner_info.social_accounts.map(a => '@' + a).join(', ')}</div></div>`;
+      }
+      if (owner_info.public_locations?.length) {
+        html += `<div class="info-item"><div class="key">📍 Lokasi dari Jejak Publik</div><div class="val" style="color: #ec4899">${owner_info.public_locations.join(', ')}</div></div>`;
+      }
+      if (owner_info.breach_exposure) {
+        html += `<div class="info-item"><div class="key">🚨 Kebocoran Data</div><div class="val" style="color: var(--danger)">${owner_info.breach_exposure}</div></div>`;
+      }
+      
+      html += `</div></div>`;
+    } else {
+      html += `<div class="empty-result">Tidak ada informasi pemilik yang tersedia. Gunakan API Caller ID berbayar (Truecaller, Sync.me, Whitepages) untuk nama pemilik.</div>`;
+    }
+
+    // Bisnis terdaftar (Google Places)
+    if (data.places?.length > 0) {
+      html += `
+        <div style="margin-bottom: 20px;">
+          <p style="font-size: 0.75rem; color: var(--muted); margin-bottom: 12px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px;">🏪 Bisnis Terkait Nomor (Google Places)</p>
+          ${data.places.map(p => `
+            <div class="breach-item">
+              <div class="breach-name">🏢 ${p.title} ${p.rating ? `<span style="color:#f59e0b; font-size:0.8rem;">⭐ ${p.rating}</span>` : ''}</div>
+              <div class="breach-date">
+                ${p.category ? '🏷️ ' + p.category + ' · ' : ''}
+                ${p.address || ''}
+                ${p.website ? ` · <a href="${p.website}" target="_blank" rel="noopener" style="color: var(--accent);">Website</a>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Sources
+    if (sources && sources.length > 0) {
+      html += '<div style="margin-top: 20px;"><p style="font-size: 0.75rem; color: var(--muted); margin-bottom: 12px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px;">Sumber Data</p>';
+      sources.forEach(src => {
+        const statusClass = src.status === 'success' ? 'status-ok' : 'status-demo';
+        const statusText = src.status === 'success' ? 'LIVE' : 'DEMO';
+        let bodyHtml = '';
+
+        // Serper OSINT — tampilkan jejak publik lengkap dengan platform
+        if (src.publicRecords?.length > 0) {
+          const platformCounts = {};
+          src.publicRecords.forEach(r => { platformCounts[r.platform] = (platformCounts[r.platform] || 0) + 1; });
+          bodyHtml += `<p style="font-size: 0.8rem; color: var(--warning); margin-bottom: 10px;">🔎 ${src.publicRecords.length} jejak publik ditemukan:</p>`;
+          bodyHtml += `<div class="data-tags" style="margin-bottom: 12px;">${Object.entries(platformCounts).map(([p, c]) => `<span class="data-tag">${p}${c > 1 ? ' ×' + c : ''}</span>`).join('')}</div>`;
+          bodyHtml += src.publicRecords.map(r => `
+            <div class="breach-item">
+              <div class="breach-name"><span style="color:var(--muted); font-size:0.75rem;">${r.platform || '🌐 Web'}</span> · <a href="${r.link}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${r.title}</a></div>
+              <div class="breach-date">${(r.snippet || '').substring(0, 250)}</div>
+            </div>
+          `).join('');
+        }
+
+        // LeakCheck — hasil breach
+        if (src.source === 'LeakCheck') {
+          bodyHtml = src.found
+            ? `<p style="color: var(--danger); font-size: 0.85rem; margin-bottom: 10px;">🚨 Nomor ditemukan di ${src.count} kebocoran data!</p>` +
+              (src.sources || []).map(b => `
+                <div class="breach-item">
+                  <div class="breach-name">📂 ${b.name}</div>
+                  <div class="breach-date">📅 ${b.date}</div>
+                </div>
+              `).join('')
+            : '<div class="empty-result">✅ Tidak ditemukan di database kebocoran LeakCheck</div>';
+        }
+
+        // NumVerify / AbstractAPI — tampilkan detail data
+        if (src.data) {
+          const d = src.data;
+          if (src.source === 'NumVerify') {
+            bodyHtml = `
+              <div class="info-grid">
+                <div class="info-item"><div class="key">Nomor Valid</div><div class="val">${d.valid ? '✅ Ya' : '❌ Tidak'}</div></div>
+                <div class="info-item"><div class="key">Format Internasional</div><div class="val" style="font-family:var(--mono)">${d.international_format || '-'}</div></div>
+                <div class="info-item"><div class="key">Operator</div><div class="val" style="color:var(--accent)">${d.carrier || '-'}</div></div>
+                <div class="info-item"><div class="key">Tipe Jalur</div><div class="val">${d.line_type || '-'}</div></div>
+                <div class="info-item"><div class="key">Negara</div><div class="val">${d.country_name || '-'}</div></div>
+                <div class="info-item"><div class="key">Lokasi Terdaftar</div><div class="val">${d.location || '-'}</div></div>
+              </div>
+            `;
+          } else if (d.connection) {
+            bodyHtml = `
+              <div class="info-grid">
+                <div class="info-item"><div class="key">Operator Sekarang</div><div class="val" style="color:var(--accent)">${d.connection.current_carrier || '-'}</div></div>
+                <div class="info-item"><div class="key">Operator Asal</div><div class="val">${d.connection.original_carrier || '-'}</div></div>
+                <div class="info-item"><div class="key">Tipe Jalur</div><div class="val">${d.connection.line_type || '-'}</div></div>
+              </div>
+            `;
+          }
+        }
+
+        html += `
+          <div class="source-card">
+            <div class="source-header">
+              <span class="source-name">${src.source}</span>
+              <span class="source-status ${statusClass}">${statusText}</span>
+            </div>
+            <div class="source-body">
+              ${bodyHtml || '<div class="empty-result" style="font-size: 0.75rem;">Data tidak tersedia</div>'}
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+    }
+
+    // Panel cross-reference
+    html += renderActionPanel(phone.local);
+
+    document.getElementById('results').innerHTML = html;
+  }
+</script>
+
+<script>
+  // ---- PWA SERVICE WORKER REGISTRATION ----
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(err =>
+        console.warn('SW registration gagal:', err.message)
+      );
+    });
+  }
+
+  // ---- MATRIX RAIN BACKGROUND ----
+  (function() {
+    const canvas = document.getElementById('matrixRain');
+    const ctx = canvas.getContext('2d');
+    let cols, drops;
+    const chars = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEF<>[]{}$#@*+=';
+    
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      cols = Math.floor(canvas.width / 14);
+      drops = Array(cols).fill(0).map(() => Math.random() * -100);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    setInterval(() => {
+      ctx.fillStyle = 'rgba(3, 8, 3, 0.08)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '13px Share Tech Mono, monospace';
+      for (let i = 0; i < cols; i++) {
+        const ch = chars[Math.floor(Math.random() * chars.length)];
+        const y = drops[i] * 16;
+        // Kepala hujan lebih terang
+        ctx.fillStyle = Math.random() > 0.975 ? '#aaffcc' : '#00ff41';
+        ctx.fillText(ch, i * 14, y);
+        if (y > canvas.height && Math.random() > 0.976) drops[i] = 0;
+        drops[i]++;
+      }
+    }, 50);
+  })();
 </script>
 
 </body>
 </html>
+
+
